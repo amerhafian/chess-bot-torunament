@@ -14,6 +14,7 @@ from backend.engine.stockfish import StockfishUnavailable, stockfish_available
 from backend.play.manager import play_manager, random_weights
 from backend.tournament.models import TournamentFormat, WeightRange
 from backend.tournament.runner import manager, parse_config
+from backend.weights import refine as weight_refine
 from backend.weights import store as weight_store
 
 router = APIRouter()
@@ -37,6 +38,24 @@ class WeightsFields(BaseModel):
     d2: Optional[float] = None
     e1: Optional[float] = None
     e2: Optional[float] = None
+    f1: Optional[float] = None
+    f2: Optional[float] = None
+    g1: Optional[float] = None
+    g2: Optional[float] = None
+    h1: Optional[float] = None
+    h2: Optional[float] = None
+    i1: Optional[float] = None
+    i2: Optional[float] = None
+    j1: Optional[float] = None
+    j2: Optional[float] = None
+    k1: Optional[float] = None
+    k2: Optional[float] = None
+    l1: Optional[float] = None
+    l2: Optional[float] = None
+    m1: Optional[float] = None
+    m2: Optional[float] = None
+    n1: Optional[float] = None
+    n2: Optional[float] = None
     a: Optional[float] = None
     b: Optional[float] = None
     c: Optional[float] = None
@@ -49,7 +68,7 @@ def weights_from_fields(body: WeightsFields) -> Weights:
 class TournamentCreateIn(BaseModel):
     bot_count: int = Field(default=4, ge=2, le=32)
     format: TournamentFormat = TournamentFormat.ROUND_ROBIN
-    depth: int = Field(default=3, ge=1, le=8)
+    depth: int = Field(default=3, ge=1)
     range_a: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.5, max=2.0))
     range_b: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
     range_c: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
@@ -57,6 +76,7 @@ class TournamentCreateIn(BaseModel):
     range_e: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
     range_exp: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.5, max=1.5))
     seed: Optional[int] = None
+    weight_ids: list[str] = Field(default_factory=list)
 
 
 class SaveWeightsIn(WeightsFields):
@@ -70,11 +90,11 @@ class SaveWinnerIn(BaseModel):
 
 
 class PlayCreateIn(WeightsFields):
-    depth: int = Field(default=3, ge=1, le=8)
+    depth: int = Field(default=3, ge=1)
     human_color: str = Field(default="white", pattern="^(white|black)$")
     mode: str = Field(default="human", pattern="^(human|stockfish)$")
     stockfish_color: str = Field(default="white", pattern="^(white|black)$")
-    stockfish_depth: int = Field(default=14, ge=1, le=30)
+    stockfish_depth: int = Field(default=14, ge=1)
     weight_id: Optional[str] = None
     randomize: bool = False
     range_a: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.5, max=2.0))
@@ -126,11 +146,22 @@ async def evaluate_position(body: EvaluateIn) -> dict[str, Any]:
 
 @router.post("/tournaments")
 async def create_tournament(body: TournamentCreateIn) -> dict[str, Any]:
+    pinned: list[tuple[str, Weights]] = []
+    seen: set[str] = set()
+    for weight_id in body.weight_ids:
+        if not weight_id or weight_id in seen:
+            continue
+        seen.add(weight_id)
+        saved = weight_store.get_weights(weight_id)
+        if saved is None:
+            raise HTTPException(status_code=404, detail=f"Saved weights not found: {weight_id}")
+        label = str(saved.get("bot_name") or saved.get("name") or weight_id)
+        pinned.append((label, Weights.from_dict(saved)))
     try:
         config = parse_config(body.model_dump())
+        tournament = await manager.create_tournament(config, pinned)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    tournament = await manager.create_tournament(config)
     return tournament.to_dict()
 
 
@@ -194,6 +225,32 @@ async def save_weights(body: SaveWeightsIn) -> dict[str, Any]:
         source=body.source,
         bot_name=body.bot_name,
     )
+
+
+class RefineIn(BaseModel):
+    bot_count: int = Field(default=4, ge=2, le=32)
+    depth: int = Field(default=3, ge=1)
+
+
+@router.post("/weights/refine")
+async def start_weight_refine(body: RefineIn) -> dict[str, Any]:
+    try:
+        return weight_refine.start_refine(bot_count=body.bot_count, depth=body.depth)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/weights/refine")
+async def refine_status() -> dict[str, Any]:
+    return weight_refine.current_refine()
+
+
+@router.get("/weights/refine/{job_id}")
+async def refine_job(job_id: str) -> dict[str, Any]:
+    job = weight_refine.get_refine(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Weight search not found")
+    return job
 
 
 @router.get("/weights/{weight_id}")

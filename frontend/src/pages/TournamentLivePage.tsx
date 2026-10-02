@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { api, formatWeights, type Game, type Tournament } from '../api'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { api, formatWeights, type Game, type RefineJob, type Tournament } from '../api'
 import { Board } from '../components/Board'
 import { EvalBar } from '../components/EvalBar'
 import { MoveControls } from '../components/MoveControls'
@@ -12,7 +12,9 @@ import { useWebSocket } from '../hooks/useWebSocket'
 
 export function TournamentLivePage() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [tournament, setTournament] = useState<Tournament | null>(null)
+  const [refine, setRefine] = useState<RefineJob | null>(null)
   const [watched, setWatched] = useState<string[]>([])
   const [gameMap, setGameMap] = useState<Record<string, Game>>({})
   const [error, setError] = useState<string | null>(null)
@@ -31,6 +33,35 @@ export function TournamentLivePage() {
       })
       .catch((e) => setError(e.message))
   }, [id])
+
+  useEffect(() => {
+    let timer: number | undefined
+    let cancelled = false
+    const tick = () => {
+      api
+        .refineStatus()
+        .then((job) => {
+          if (cancelled) return
+          setRefine(job)
+          if (
+            job.status === 'running' &&
+            job.tournament_id &&
+            id &&
+            job.tournament_id !== id &&
+            job.tournament_ids?.includes(id)
+          ) {
+            navigate(`/tournament/${job.tournament_id}`)
+          }
+          if (job.status === 'running') timer = window.setTimeout(tick, 2000)
+        })
+        .catch(() => undefined)
+    }
+    tick()
+    return () => {
+      cancelled = true
+      if (timer) window.clearTimeout(timer)
+    }
+  }, [id, navigate])
 
   useWebSocket<{ type: string; tournament?: Tournament; game?: Game }>(
     id ? `/ws/tournaments/${id}` : null,
@@ -104,6 +135,16 @@ export function TournamentLivePage() {
             {tournament.config.format === 'round_robin' ? 'Round-robin' : 'Single elimination'} ·{' '}
             {tournament.bots.length} bots · depth {tournament.config.depth}
           </p>
+          {refine && refine.tournament_ids?.includes(tournament.id) && (
+            <p className="mt-1 text-sm text-[var(--color-felt-deep)]">
+              Find weights · generation {refine.generation ?? 1} of {refine.generations ?? 5}
+              {refine.phase === 'coarse' ? ' · coarse field' : ''}
+              {refine.step != null ? ` · step ${refine.step}` : ''}
+              {refine.leader ? ` · leader ${refine.leader}` : ''}
+              {refine.status === 'finished' ? ' · saved to the library' : ''}
+              {refine.status === 'error' ? ` · ${refine.error ?? 'failed'}` : ''}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Link to="/tournament" className="btn-secondary rounded-md px-4 py-2 text-sm font-semibold">

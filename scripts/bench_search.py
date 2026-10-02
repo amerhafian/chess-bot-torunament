@@ -21,21 +21,21 @@ def main() -> None:
     )
     weights = Weights(1.0, 0.2, 0.2)
     board = chess.Board()
-    for parallel in (False, True):
-        for depth in (3, 4, 5):
-            bot = Bot(
-                "bench",
-                weights,
-                depth=depth,
-                use_parallel=parallel,
-                lane="background",
-            )
-            t0 = time.perf_counter()
-            result = bot.choose_move(board)
-            dt = time.perf_counter() - t0
-            move = result[0] if result else None
-            score = result[1] if result else None
-            print(f"parallel={parallel} depth={depth}: {move} score={score} in {dt:.3f}s")
+    for depth in (6, 8, 10):
+        bot = Bot(
+            "bench",
+            weights,
+            depth=depth,
+            use_parallel=False,
+            use_native=True,
+            lane="interactive",
+        )
+        t0 = time.perf_counter()
+        result = bot.choose_move(board)
+        dt = time.perf_counter() - t0
+        move = result[0] if result else None
+        score = result[1] if result else None
+        print(f"native depth={depth}: {move} score={score} in {dt:.3f}s")
 
 
 if __name__ == "__main__":

@@ -9,6 +9,24 @@ export type Weights = {
   d2: number
   e1: number
   e2: number
+  f1: number
+  f2: number
+  g1: number
+  g2: number
+  h1: number
+  h2: number
+  i1: number
+  i2: number
+  j1: number
+  j2: number
+  k1: number
+  k2: number
+  l1: number
+  l2: number
+  m1: number
+  m2: number
+  n1: number
+  n2: number
   /** Legacy coeff aliases */
   a?: number
   b?: number
@@ -98,6 +116,21 @@ export type Tournament = {
   finished_at: number | null
 }
 
+export type RefineJob = {
+  id?: string
+  status: 'idle' | 'running' | 'finished' | 'error'
+  generation?: number
+  generations?: number
+  phase?: string
+  step?: number | null
+  leader?: string | null
+  tournament_id?: string | null
+  tournament_ids?: string[]
+  saved_id?: string | null
+  error?: string | null
+  weights?: Partial<Weights> | null
+}
+
 export type SavedWeights = Weights & {
   id: string
   name: string
@@ -183,6 +216,15 @@ export const api = {
   deleteWeights: (id: string) =>
     fetch(`/api/weights/${id}`, { method: 'DELETE' }).then((r) => json<{ deleted: boolean }>(r)),
 
+  startRefine: (botCount: number, depth: number) =>
+    fetch('/api/weights/refine', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot_count: botCount, depth }),
+    }).then((r) => json<RefineJob>(r)),
+
+  refineStatus: () => fetch('/api/weights/refine').then((r) => json<RefineJob>(r)),
+
   createPlay: (body: unknown) =>
     fetch('/api/play', {
       method: 'POST',
@@ -231,6 +273,24 @@ export function normalizeWeights(w: Partial<Weights> | null | undefined): Weight
     d2: w?.d2 ?? 1,
     e1: w?.e1 ?? 0,
     e2: w?.e2 ?? 1,
+    f1: w?.f1 ?? 0,
+    f2: w?.f2 ?? 1,
+    g1: w?.g1 ?? 0,
+    g2: w?.g2 ?? 1,
+    h1: w?.h1 ?? 0,
+    h2: w?.h2 ?? 1,
+    i1: w?.i1 ?? 0,
+    i2: w?.i2 ?? 1,
+    j1: w?.j1 ?? 0,
+    j2: w?.j2 ?? 1,
+    k1: w?.k1 ?? 0,
+    k2: w?.k2 ?? 1,
+    l1: w?.l1 ?? 0,
+    l2: w?.l2 ?? 1,
+    m1: w?.m1 ?? 0,
+    m2: w?.m2 ?? 1,
+    n1: w?.n1 ?? 0,
+    n2: w?.n2 ?? 1,
     a: w?.a1 ?? w?.a ?? 0,
     b: w?.b1 ?? w?.b ?? 0,
     c: w?.c1 ?? w?.c ?? 0,
@@ -246,6 +306,20 @@ export function formatWeights(w: Partial<Weights>): string {
     `d=${n.d1.toFixed(2)}^${n.d2.toFixed(2)}`,
     `e=${n.e1.toFixed(2)}^${n.e2.toFixed(2)}`,
   ]
+  const extra: Array<[string, number, number]> = [
+    ['f', n.f1, n.f2],
+    ['g', n.g1, n.g2],
+    ['h', n.h1, n.h2],
+    ['i', n.i1, n.i2],
+    ['j', n.j1, n.j2],
+    ['k', n.k1, n.k2],
+    ['l', n.l1, n.l2],
+    ['m', n.m1, n.m2],
+    ['n', n.n1, n.n2],
+  ]
+  for (const [name, coeff, exp] of extra) {
+    if (coeff !== 0) parts.push(`${name}=${coeff.toFixed(2)}^${exp.toFixed(2)}`)
+  }
   return parts.join(' · ')
 }
 
@@ -262,5 +336,23 @@ export function weightsToEvaluatePayload(w: Partial<Weights>): Partial<Weights> 
     d2: n.d2,
     e1: n.e1,
     e2: n.e2,
+    f1: n.f1,
+    f2: n.f2,
+    g1: n.g1,
+    g2: n.g2,
+    h1: n.h1,
+    h2: n.h2,
+    i1: n.i1,
+    i2: n.i2,
+    j1: n.j1,
+    j2: n.j2,
+    k1: n.k1,
+    k2: n.k2,
+    l1: n.l1,
+    l2: n.l2,
+    m1: n.m1,
+    m2: n.m2,
+    n1: n.n1,
+    n2: n.n2,
   }
 }

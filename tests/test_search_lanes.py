@@ -8,10 +8,15 @@ from backend.engine import bot as bot_mod
 from backend.engine.bot import (
     Bot,
     background_worker_count,
+    game_concurrency,
     interactive_worker_count,
     root_worker_count,
 )
 from backend.engine.evaluation import Weights
+
+
+def test_tournament_runs_many_games_at_once():
+    assert game_concurrency() == 25
 
 
 def test_lane_worker_counts_are_positive_and_split():

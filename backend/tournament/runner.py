@@ -112,25 +112,39 @@ class TournamentManager:
 
     # ---- creation ----
 
-    async def create_tournament(self, config: TournamentConfig) -> TournamentState:
+    async def create_tournament(
+        self,
+        config: TournamentConfig,
+        pinned: list[tuple[str, Weights]] | None = None,
+    ) -> TournamentState:
         rng = random.Random(config.seed)
-        names: set[str] = set()
+        field = mix_field(config, pinned or [], rng)
+        return self.start_with_weights(
+            config,
+            [weights for _, weights in field],
+            rng,
+            names=[name for name, _ in field],
+        )
+
+    def start_with_weights(
+        self,
+        config: TournamentConfig,
+        weights_list: list[Weights],
+        rng: random.Random | None = None,
+        names: list[str] | None = None,
+    ) -> TournamentState:
+        """Start a tournament whose bots use these weights exactly."""
+        rng = rng or random.Random(config.seed)
+        if names is not None and len(names) != len(weights_list):
+            raise ValueError("names and weights length mismatch")
+        used: set[str] = set()
         bots: list[BotSpec] = []
-        for _ in range(config.bot_count):
-            name = generate_bot_name(names, rng)
-            names.add(name)
-            weights = Weights(
-                material=rng.uniform(config.range_a.min, config.range_a.max),
-                controlled=rng.uniform(config.range_b.min, config.range_b.max),
-                checking=rng.uniform(config.range_c.min, config.range_c.max),
-                attacked=rng.uniform(config.range_d.min, config.range_d.max),
-                center=rng.uniform(config.range_e.min, config.range_e.max),
-                material_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
-                controlled_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
-                checking_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
-                attacked_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
-                center_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
-            )
+        for index, weights in enumerate(weights_list):
+            if names is None:
+                name = generate_bot_name(used, rng)
+            else:
+                name = _dedupe_name(names[index], used)
+            used.add(name)
             bots.append(
                 BotSpec(
                     id=new_id("b_"),
@@ -139,6 +153,7 @@ class TournamentManager:
                     depth=config.depth,
                 )
             )
+        config.bot_count = len(bots)
 
         tournament = TournamentState(
             id=new_id("t_"),
@@ -186,7 +201,6 @@ class TournamentManager:
         pending = [g for g in tournament.games.values() if g.status == GameStatus.PENDING]
         from backend.engine.bot import game_concurrency
 
-        # Leave headroom for per-move root process pools
         sem = asyncio.Semaphore(game_concurrency())
 
         async def run_one(game: GameState) -> None:
@@ -280,12 +294,14 @@ class TournamentManager:
             game.white.name,
             game.white.weights,
             game.white.depth,
+            use_parallel=False,
             lane="background",
         )
         black_bot = Bot(
             game.black.name,
             game.black.weights,
             game.black.depth,
+            use_parallel=False,
             lane="background",
         )
 
@@ -411,6 +427,52 @@ class TournamentManager:
         return sorted(self.tournaments.values(), key=lambda t: t.created_at, reverse=True)
 
 
+def _random_weights(config: TournamentConfig, rng: random.Random) -> Weights:
+    return Weights(
+        material=rng.uniform(config.range_a.min, config.range_a.max),
+        controlled=rng.uniform(config.range_b.min, config.range_b.max),
+        checking=rng.uniform(config.range_c.min, config.range_c.max),
+        attacked=rng.uniform(config.range_d.min, config.range_d.max),
+        center=rng.uniform(config.range_e.min, config.range_e.max),
+        material_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
+        controlled_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
+        checking_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
+        attacked_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
+        center_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
+    )
+
+
+def _dedupe_name(name: str, used: set[str]) -> str:
+    base = name.strip() or "Saved bot"
+    candidate = base
+    suffix = 2
+    while candidate in used:
+        candidate = f"{base} {suffix}"
+        suffix += 1
+    return candidate
+
+
+def mix_field(
+    config: TournamentConfig,
+    pinned: list[tuple[str, Weights]],
+    rng: random.Random,
+) -> list[tuple[str, Weights]]:
+    """Saved bots first, then random bots until the field is full."""
+    if len(pinned) > config.bot_count:
+        raise ValueError("selected saved bots exceed bot_count")
+    used: set[str] = set()
+    field: list[tuple[str, Weights]] = []
+    for name, weights in pinned:
+        unique = _dedupe_name(name, used)
+        used.add(unique)
+        field.append((unique, weights))
+    for _ in range(config.bot_count - len(pinned)):
+        name = generate_bot_name(used, rng)
+        used.add(name)
+        field.append((name, _random_weights(config, rng)))
+    return field
+
+
 manager = TournamentManager()
 
 
@@ -429,8 +491,8 @@ def parse_config(data: dict[str, Any]) -> TournamentConfig:
     if bot_count > 32:
         raise ValueError("bot_count must be at most 32")
     depth = int(data.get("depth", 3))
-    if depth < 1 or depth > 8:
-        raise ValueError("depth must be between 1 and 8")
+    if depth < 1:
+        raise ValueError("depth must be at least 1")
 
     range_a = rng("range_a", 0.5, 2.0)
     range_b = rng("range_b", 0.0, 1.0)

@@ -188,6 +188,7 @@ def test_depth3_opening_move_is_fast():
         weights=Weights(1.0, 0.2, 0.2),
         depth=3,
         use_parallel=False,
+        use_native=False,
         lane="interactive",
     )
     t0 = time.perf_counter()
@@ -201,3 +202,96 @@ def test_score_to_bar_marks_search_source():
     data = score_to_bar(1.5)
     assert data["source"] == "search"
     assert data["white_pct"] > 50
+
+
+def test_extended_weights_round_trip_and_legacy_tuple():
+    from backend.engine.evaluation import Weights as W
+
+    legacy = W.from_tuple((1.0, 0.2, 0.3, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0))
+    assert legacy.pst == 0.0
+    full = W(material=1.0, pst=0.2, passed=0.3, structure=0.1, shield=0.1, bishop=0.15, rook_file=0.05)
+    restored = W.from_tuple(full.as_tuple())
+    assert len(full.as_tuple()) == 28
+    assert restored.pst == 0.2
+    assert restored.passed == 0.3
+    assert restored.tempo == 0.0
+    assert W.from_dict({"a": 1.0, "f1": 0.4}).pst == 0.4
+    assert W.from_dict({"a": 1.0, "l1": 0.2, "m1": 0.3, "n1": 0.4}).tempo == 0.2
+    short = full.as_tuple()[:22]
+    assert W.from_tuple(short).outpost == 0.0
+
+
+def test_new_metrics_are_balanced_at_start_and_see_a_passer():
+    from backend.engine.evaluation import (
+        bishop_pair_balance,
+        passed_pawn_balance,
+        pawn_structure_balance,
+        pst_balance,
+        rook_file_balance,
+    )
+
+    start = chess.Board()
+    assert pst_balance(start) == 0.0
+    assert passed_pawn_balance(start) == 0.0
+    assert pawn_structure_balance(start) == 0.0
+    assert bishop_pair_balance(start) == 0
+    assert rook_file_balance(start) == 0
+
+    passer = chess.Board(None)
+    passer.set_piece_at(chess.E6, chess.Piece.from_symbol("P"))
+    passer.set_piece_at(chess.E1, chess.Piece.from_symbol("K"))
+    passer.set_piece_at(chess.E8, chess.Piece.from_symbol("k"))
+    assert passed_pawn_balance(passer) > 0
+
+
+def test_tempo_outpost_and_tropism():
+    from backend.engine.evaluation import king_tropism_balance, knight_outpost_balance, static_eval, tempo_balance
+
+    start = chess.Board()
+    assert tempo_balance(start) == 1.0
+    assert knight_outpost_balance(start) == 0
+    assert king_tropism_balance(start) == 0
+
+    outpost = chess.Board(None)
+    outpost.set_piece_at(chess.E4, chess.Piece.from_symbol("N"))
+    outpost.set_piece_at(chess.D3, chess.Piece.from_symbol("P"))
+    outpost.set_piece_at(chess.E1, chess.Piece.from_symbol("K"))
+    outpost.set_piece_at(chess.E8, chess.Piece.from_symbol("k"))
+    assert knight_outpost_balance(outpost) == 1
+
+    attacked = outpost.copy()
+    attacked.set_piece_at(chess.D5, chess.Piece.from_symbol("p"))
+    assert knight_outpost_balance(attacked) == 0
+
+    tropism = chess.Board(None)
+    tropism.set_piece_at(chess.E1, chess.Piece.from_symbol("K"))
+    tropism.set_piece_at(chess.E8, chess.Piece.from_symbol("k"))
+    tropism.set_piece_at(chess.E7, chess.Piece.from_symbol("Q"))
+    assert king_tropism_balance(tropism) == 6
+    score = static_eval(tropism, Weights(material=0.0, tropism=4.0))
+    assert abs(score - 6.0) < 1e-9
+
+
+def test_quiescence_rejects_hanging_capture_at_depth_one():
+    """Knight takes a pawn and is recaptured. Depth 1 without qsearch sees +1."""
+    board = chess.Board(None)
+    board.set_piece_at(chess.C3, chess.Piece.from_symbol("N"))
+    board.set_piece_at(chess.G1, chess.Piece.from_symbol("K"))
+    board.set_piece_at(chess.D5, chess.Piece.from_symbol("p"))
+    board.set_piece_at(chess.D8, chess.Piece.from_symbol("q"))
+    board.set_piece_at(chess.G8, chess.Piece.from_symbol("k"))
+    board.turn = chess.WHITE
+    bot = Bot(
+        name="Q",
+        weights=Weights(material=1.0),
+        depth=1,
+        use_parallel=False,
+        use_native=False,
+        lane="interactive",
+    )
+    result = bot.choose_move(board)
+    assert result is not None
+    move, score = result
+    assert move != chess.Move.from_uci("c3d5")
+    # Still down a queen. The capture must not be scored as winning the pawn.
+    assert score < -5

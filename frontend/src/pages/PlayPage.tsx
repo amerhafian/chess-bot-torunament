@@ -411,7 +411,6 @@ export function PlayPage() {
             <input
               type="number"
               min={1}
-              max={8}
               className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
               value={depth}
               onChange={(e) => setDepth(Number(e.target.value))}
@@ -421,11 +420,10 @@ export function PlayPage() {
             <label className="text-sm sm:col-span-2">
               <span className="mb-1 block font-medium">Stockfish depth</span>
               <input
-                type="number"
-                min={1}
-                max={30}
-                className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
-                value={sfDepth}
+              type="number"
+              min={1}
+              className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
+              value={sfDepth}
                 onChange={(e) => setSfDepth(Number(e.target.value))}
               />
             </label>

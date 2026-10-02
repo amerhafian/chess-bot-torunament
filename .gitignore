@@ -13,3 +13,5 @@ frontend/dist/
 *.egg-info/
 .coverage
 htmlcov/
+backend/engine/native*.so
+engine/cpp/build/

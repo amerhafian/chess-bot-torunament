@@ -286,6 +286,8 @@ function WatchPanelBody({ game, onClose }: { game: Game; onClose: () => void }) 
     review.isLive,
     game.evaluation,
     review.displayFen,
+    review.ply,
+    game.eval_history,
     game.white.weights,
     game.black.weights,
   )

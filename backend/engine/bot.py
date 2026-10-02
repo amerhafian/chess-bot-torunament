@@ -7,7 +7,7 @@ ProcessPoolExecutors so tournament root searches cannot queue-starve live play.
 from __future__ import annotations
 
 import os
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from multiprocessing import get_context
 from typing import Literal, Optional
@@ -26,6 +26,7 @@ MIN_DEPTH_FOR_POOL = 3
 MIN_MOVES_FOR_POOL = 4
 
 SearchLane = Literal["interactive", "background"]
+MoveResult = tuple[chess.Move, float]
 
 # Lane-isolated process pools (lazy).
 _POOLS: dict[SearchLane, ProcessPoolExecutor | None] = {
@@ -36,9 +37,6 @@ _POOL_WORKERS: dict[SearchLane, int] = {
     "interactive": 0,
     "background": 0,
 }
-
-# Interactive serial fallback — never shared with tournament threads.
-_INTERACTIVE_THREADS: ThreadPoolExecutor | None = None
 
 
 def interactive_worker_count() -> int:
@@ -90,16 +88,6 @@ def _get_pool(lane: SearchLane) -> ProcessPoolExecutor:
     return _POOLS[lane]
 
 
-def _get_interactive_threads() -> ThreadPoolExecutor:
-    global _INTERACTIVE_THREADS
-    if _INTERACTIVE_THREADS is None:
-        _INTERACTIVE_THREADS = ThreadPoolExecutor(
-            max_workers=max(2, interactive_worker_count()),
-            thread_name_prefix="chess-interactive",
-        )
-    return _INTERACTIVE_THREADS
-
-
 @dataclass
 class Bot:
     """A named alpha-beta player with fixed evaluation weights."""
@@ -110,8 +98,8 @@ class Bot:
     use_parallel: bool = True
     lane: SearchLane = "background"
 
-    def choose_move(self, board: chess.Board) -> Optional[chess.Move]:
-        """Return the best move for the side to move, or None if no legal moves."""
+    def choose_move(self, board: chess.Board) -> Optional[MoveResult]:
+        """Return (best_move, white_perspective_score), or None if no legal moves."""
         legal = list(board.legal_moves)
         if not legal:
             return None
@@ -122,9 +110,9 @@ class Bot:
             self.use_parallel
             and self.depth >= MIN_DEPTH_FOR_POOL
             and len(ordered) >= MIN_MOVES_FOR_POOL
-            and workers >= 1
+            and workers > 1
         )
-        if use_pool and workers > 1:
+        if use_pool:
             try:
                 return _choose_move_parallel(
                     board, ordered, self.weights, self.depth, self.lane
@@ -132,8 +120,8 @@ class Bot:
             except Exception:
                 _reset_pool(self.lane)
 
-        # Background serial: run inside background process so GIL stays off the
-        # main process used by interactive play / API.
+        # Background serial in a worker process (keeps GIL off the API process).
+        # Skip if parallel already preferred and failed — still try once.
         if self.lane == "background" and workers >= 1:
             try:
                 return _choose_move_serial_in_process(
@@ -142,13 +130,7 @@ class Bot:
             except Exception:
                 _reset_pool(self.lane)
 
-        if self.lane == "interactive":
-            # Dedicated interactive threads — tournaments never submit here.
-            fut = _get_interactive_threads().submit(
-                _choose_move_serial, board.copy(stack=False), ordered, self.weights, self.depth
-            )
-            return fut.result()
-
+        # Interactive: run inline (caller already uses asyncio.to_thread).
         return _choose_move_serial(board, ordered, self.weights, self.depth)
 
 
@@ -157,7 +139,7 @@ def _choose_move_serial(
     ordered: list[chess.Move],
     weights: Weights,
     depth: int,
-) -> chess.Move:
+) -> MoveResult:
     maximizing = board.turn == chess.WHITE
     best_move = ordered[0]
     best_score = float("-inf") if maximizing else float("inf")
@@ -182,7 +164,7 @@ def _choose_move_serial(
         elif score < best_score:
             best_score = score
             best_move = move
-    return best_move
+    return best_move, best_score
 
 
 def _choose_move_parallel(
@@ -191,14 +173,14 @@ def _choose_move_parallel(
     weights: Weights,
     depth: int,
     lane: SearchLane,
-) -> chess.Move:
+) -> MoveResult:
     fen = board.fen()
     maximizing = board.turn == chess.WHITE
     weight_tuple = weights.as_tuple()
     args = [(fen, move.uci(), depth - 1, weight_tuple) for move in ordered]
 
     pool = _get_pool(lane)
-    results = list(pool.map(_score_root_move, args, chunksize=1))
+    results = list(pool.map(_score_root_move, args, chunksize=2))
 
     best_move_uci = results[0][0]
     best_score = results[0][1]
@@ -210,7 +192,7 @@ def _choose_move_parallel(
         elif score < best_score:
             best_score = score
             best_move_uci = move_uci
-    return chess.Move.from_uci(best_move_uci)
+    return chess.Move.from_uci(best_move_uci), best_score
 
 
 def _choose_move_serial_in_process(
@@ -219,7 +201,7 @@ def _choose_move_serial_in_process(
     weights: Weights,
     depth: int,
     lane: SearchLane,
-) -> chess.Move:
+) -> MoveResult:
     payload = (
         board.fen(),
         [m.uci() for m in ordered],
@@ -227,8 +209,8 @@ def _choose_move_serial_in_process(
         weights.as_tuple(),
     )
     pool = _get_pool(lane)
-    move_uci = pool.submit(_serial_search_worker, payload).result()
-    return chess.Move.from_uci(move_uci)
+    move_uci, score = pool.submit(_serial_search_worker, payload).result()
+    return chess.Move.from_uci(move_uci), score
 
 
 def _score_root_move(payload: tuple[str, str, int, tuple[float, float, float]]) -> tuple[str, float]:
@@ -253,25 +235,33 @@ def _score_root_move(payload: tuple[str, str, int, tuple[float, float, float]]) 
 
 def _serial_search_worker(
     payload: tuple[str, list[str], int, tuple[float, float, float]],
-) -> str:
+) -> tuple[str, float]:
     """Worker entry: full serial root search in a background process."""
     fen, move_ucis, depth, weight_tuple = payload
     board = chess.Board(fen)
     ordered = [chess.Move.from_uci(u) for u in move_ucis]
     weights = Weights(*weight_tuple)
-    move = _choose_move_serial(board, ordered, weights, depth)
-    return move.uci()
+    move, score = _choose_move_serial(board, ordered, weights, depth)
+    return move.uci(), score
 
 
 def _order_moves(board: chess.Board, moves: list[chess.Move]) -> list[chess.Move]:
-    """Prefer captures / checks for better alpha-beta pruning."""
+    """Prefer captures for better alpha-beta pruning (no gives_check — too costly)."""
+    return sorted(moves, key=board.is_capture, reverse=True)
 
-    def key(move: chess.Move) -> tuple[int, int]:
-        capture = 1 if board.is_capture(move) else 0
-        check = 1 if board.gives_check(move) else 0
-        return (capture, check)
 
-    return sorted(moves, key=key, reverse=True)
+def _is_cheap_terminal(board: chess.Board) -> bool:
+    """Fast terminal detection for search — skips expensive threefold scans."""
+    if board.is_insufficient_material():
+        return True
+    if board.halfmove_clock >= 100:
+        return True
+    # Checkmate / stalemate: no legal moves
+    try:
+        next(board.generate_legal_moves())
+        return False
+    except StopIteration:
+        return True
 
 
 def _alphabeta(
@@ -298,7 +288,7 @@ def _alphabeta(
             if alpha >= beta:
                 return e_score
 
-    if depth == 0 or board.is_game_over(claim_draw=True):
+    if depth == 0 or _is_cheap_terminal(board):
         return evaluate(board, weights, depth_remaining=depth)
 
     moves = _order_moves(board, list(board.legal_moves))

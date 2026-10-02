@@ -4,6 +4,7 @@ export type Evaluation = {
   score: number
   white_pct: number
   label: string
+  source?: 'search' | 'static'
 }
 
 export type WeightRange = { min: number; max: number }
@@ -31,6 +32,8 @@ export type Game = {
   finished_at: number | null
   last_move_at: number | null
   tournament_id: string | null
+  search_score?: number | null
+  eval_history?: Array<number | null>
   evaluation?: Evaluation
 }
 
@@ -101,6 +104,8 @@ export type PlaySession = {
   created_at: number
   bot_thinking: boolean
   turn: 'white' | 'black'
+  search_score?: number | null
+  eval_history?: Array<number | null>
   evaluation?: Evaluation
 }
 

@@ -11,7 +11,7 @@ from typing import Any, Optional
 import chess
 
 from backend.engine.bot import Bot
-from backend.engine.evaluation import Weights
+from backend.engine.evaluation import Weights, evaluation_payload
 from backend.engine.names import generate_bot_name
 from backend.tournament.models import WeightRange, new_id
 from backend.tournament.runner import MIN_WATCH_MOVE_SECONDS
@@ -30,10 +30,10 @@ class PlaySession:
     result: Optional[str] = None
     created_at: float = field(default_factory=time.time)
     bot_thinking: bool = False
+    search_score: Optional[float] = None
+    eval_history: list[Optional[float]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        from backend.engine.evaluation import display_eval
-
         board = chess.Board(self.fen)
         return {
             "id": self.id,
@@ -48,7 +48,13 @@ class PlaySession:
             "created_at": self.created_at,
             "bot_thinking": self.bot_thinking,
             "turn": "white" if board.turn == chess.WHITE else "black",
-            "evaluation": display_eval(board, self.weights),
+            "search_score": self.search_score,
+            "eval_history": list(self.eval_history),
+            "evaluation": evaluation_payload(
+                search_score=self.search_score,
+                board=board,
+                weights=self.weights,
+            ),
         }
 
 
@@ -136,6 +142,8 @@ class PlayManager:
         san = board.san(move)
         board.push(move)
         session.moves.append(san)
+        # Human ply: no search score yet — keep prior search_score for bar until bot replies.
+        session.eval_history.append(None)
         session.fen = board.fen()
         self._update_result(session, board)
         self._publish(session)
@@ -154,22 +162,24 @@ class PlayManager:
             lane="interactive",
         )
         t0 = time.perf_counter()
-        move = await asyncio.to_thread(bot.choose_move, board)
+        result = await asyncio.to_thread(bot.choose_move, board)
         elapsed = time.perf_counter() - t0
-        # Always pace for human comfort when playing
         remaining = MIN_WATCH_MOVE_SECONDS - elapsed
         if remaining > 0:
             await asyncio.sleep(remaining)
 
         session.bot_thinking = False
-        if move is None:
+        if result is None:
             self._update_result(session, board)
             self._publish(session)
             return
 
+        move, score = result
         san = board.san(move)
         board.push(move)
         session.moves.append(san)
+        session.search_score = score
+        session.eval_history.append(score)
         session.fen = board.fen()
         self._update_result(session, board)
         self._publish(session)

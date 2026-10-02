@@ -80,13 +80,20 @@ class GameState:
     finished_at: Optional[float] = None
     last_move_at: Optional[float] = None
     tournament_id: Optional[str] = None
+    search_score: Optional[float] = None
+    eval_history: list[Optional[float]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        from backend.engine.evaluation import display_eval_averaged
+        from backend.engine.evaluation import evaluation_payload
         import chess
 
         board = chess.Board(self.fen)
-        evaluation = display_eval_averaged(board, self.white.weights, self.black.weights)
+        evaluation = evaluation_payload(
+            search_score=self.search_score,
+            board=board,
+            weights=self.white.weights,
+            weights2=self.black.weights,
+        )
         return {
             "id": self.id,
             "white": self.white.to_dict(),
@@ -103,6 +110,8 @@ class GameState:
             "finished_at": self.finished_at,
             "last_move_at": self.last_move_at,
             "tournament_id": self.tournament_id,
+            "search_score": self.search_score,
+            "eval_history": list(self.eval_history),
             "evaluation": evaluation,
         }
 

@@ -31,9 +31,11 @@ def main() -> None:
                 lane="background",
             )
             t0 = time.perf_counter()
-            move = bot.choose_move(board)
+            result = bot.choose_move(board)
             dt = time.perf_counter() - t0
-            print(f"parallel={parallel} depth={depth}: {move} in {dt:.3f}s")
+            move = result[0] if result else None
+            score = result[1] if result else None
+            print(f"parallel={parallel} depth={depth}: {move} score={score} in {dt:.3f}s")
 
 
 if __name__ == "__main__":

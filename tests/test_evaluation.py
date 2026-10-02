@@ -15,6 +15,7 @@ from backend.engine.evaluation import (
     controlled_squares_balance,
     evaluate,
     material_balance,
+    score_to_bar,
 )
 
 
@@ -25,7 +26,7 @@ def test_material_starting_position_is_zero():
 
 def test_material_after_white_up_a_pawn():
     board = chess.Board()
-    board.remove_piece_at(chess.A7)  # black pawn removed
+    board.remove_piece_at(chess.A7)
     assert material_balance(board) == 1
 
 
@@ -58,7 +59,6 @@ def test_king_pressure_scholars_mate_threat():
     board.push_san("Nc6")
     board.push_san("Bc4")
     board.push_san("Nf6")
-    # White queen/bishop pressure the black king ring / f7
     assert checking_moves_balance(board) > 0
 
 
@@ -87,10 +87,12 @@ def test_bot_finds_mate_in_one():
         depth=2,
         use_parallel=False,
     )
-    move = bot.choose_move(board)
-    assert move is not None
+    result = bot.choose_move(board)
+    assert result is not None
+    move, score = result
     board.push(move)
     assert board.is_checkmate()
+    assert score > 0
 
 
 def test_default_depth_is_three():
@@ -106,9 +108,11 @@ def test_parallel_choose_move_returns_legal():
         depth=3,
         use_parallel=True,
     )
-    move = bot.choose_move(board)
-    assert move is not None
+    result = bot.choose_move(board)
+    assert result is not None
+    move, score = result
     assert move in board.legal_moves
+    assert isinstance(score, float)
 
 
 def test_depth3_opening_move_is_fast():
@@ -117,11 +121,17 @@ def test_depth3_opening_move_is_fast():
         name="Bench",
         weights=Weights(1.0, 0.2, 0.2),
         depth=3,
-        use_parallel=True,
+        use_parallel=False,
+        lane="interactive",
     )
     t0 = time.perf_counter()
-    move = bot.choose_move(board)
+    result = bot.choose_move(board)
     elapsed = time.perf_counter() - t0
-    assert move is not None
-    # After optimizations, depth-3 opening should be well under a few seconds.
-    assert elapsed < 5.0, f"depth-3 move too slow: {elapsed:.2f}s"
+    assert result is not None
+    assert elapsed < 0.45, f"depth-3 move too slow: {elapsed:.2f}s"
+
+
+def test_score_to_bar_marks_search_source():
+    data = score_to_bar(1.5)
+    assert data["source"] == "search"
+    assert data["white_pct"] > 50

@@ -297,13 +297,16 @@ class TournamentManager:
 
             t0 = time.perf_counter()
             player = white_bot if board.turn == chess.WHITE else black_bot
-            move = await asyncio.to_thread(player.choose_move, board)
-            if move is None:
+            result = await asyncio.to_thread(player.choose_move, board)
+            if result is None:
                 break
 
+            move, score = result
             san = board.san(move)
             board.push(move)
             game.moves.append(san)
+            game.search_score = score
+            game.eval_history.append(score)
             game.fen = board.fen()
             game.last_move_at = time.time()
             move_count += 1

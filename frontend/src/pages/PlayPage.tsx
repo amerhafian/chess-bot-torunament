@@ -29,6 +29,8 @@ function PlaySessionView({
     review.isLive,
     session.evaluation,
     review.displayFen,
+    review.ply,
+    session.eval_history,
     session.weights,
   )
 

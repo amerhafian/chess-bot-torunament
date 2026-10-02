@@ -37,8 +37,9 @@ def test_interactive_and_background_bots_return_legal_moves():
     background = Bot("B", weights, depth=2, use_parallel=False, lane="background")
     mi = interactive.choose_move(board)
     mb = background.choose_move(board)
-    assert mi is not None and mi in board.legal_moves
-    assert mb is not None and mb in board.legal_moves
+    assert mi is not None and mi[0] in board.legal_moves
+    assert mb is not None and mb[0] in board.legal_moves
+    assert isinstance(mi[1], float) and isinstance(mb[1], float)
 
 
 def test_default_lane_is_background():

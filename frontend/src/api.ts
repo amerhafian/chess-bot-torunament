@@ -1,4 +1,19 @@
-export type Weights = { a: number; b: number; c: number }
+export type Weights = {
+  a1: number
+  a2: number
+  b1: number
+  b2: number
+  c1: number
+  c2: number
+  d1: number
+  d2: number
+  e1: number
+  e2: number
+  /** Legacy coeff aliases */
+  a?: number
+  b?: number
+  c?: number
+}
 
 export type Evaluation = {
   score: number
@@ -68,6 +83,9 @@ export type Tournament = {
     range_a: WeightRange
     range_b: WeightRange
     range_c: WeightRange
+    range_d: WeightRange
+    range_e: WeightRange
+    range_exp: WeightRange
     seed: number | null
   }
   bots: Bot[]
@@ -80,12 +98,9 @@ export type Tournament = {
   finished_at: number | null
 }
 
-export type SavedWeights = {
+export type SavedWeights = Weights & {
   id: string
   name: string
-  a: number
-  b: number
-  c: number
   source?: string | null
   bot_name?: string | null
   created_at: number
@@ -96,17 +111,25 @@ export type PlaySession = {
   bot_name: string
   weights: Weights
   depth: number
+  mode?: 'human' | 'stockfish'
   human_color: 'white' | 'black'
+  stockfish_color?: 'white' | 'black'
+  bot_color?: 'white' | 'black'
+  stockfish_depth?: number
   fen: string
   moves: string[]
   status: 'active' | 'finished'
   result: string | null
   created_at: number
   bot_thinking: boolean
+  sf_thinking?: boolean
   turn: 'white' | 'black'
   search_score?: number | null
   eval_history?: Array<number | null>
   evaluation?: Evaluation
+  sf_search_score?: number | null
+  sf_eval_history?: Array<number | null>
+  sf_evaluation?: Evaluation | null
 }
 
 const json = async <T>(res: Response): Promise<T> => {
@@ -150,7 +173,7 @@ export const api = {
   listWeights: () =>
     fetch('/api/weights').then((r) => json<SavedWeights[]>(r)),
 
-  saveWeights: (body: { name: string; a: number; b: number; c: number; bot_name?: string; source?: string }) =>
+  saveWeights: (body: Partial<Weights> & { name: string; bot_name?: string; source?: string }) =>
     fetch('/api/weights', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -177,15 +200,13 @@ export const api = {
       body: JSON.stringify({ move }),
     }).then((r) => json<PlaySession>(r)),
 
+  stockfishStatus: () =>
+    fetch('/api/stockfish').then((r) => json<{ available: boolean }>(r)),
+
   evaluate: (body: {
     fen: string
-    a: number
-    b: number
-    c: number
-    a2?: number
-    b2?: number
-    c2?: number
-  }) =>
+    weights2?: Partial<Weights>
+  } & Partial<Weights>) =>
     fetch('/api/evaluate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -198,6 +219,48 @@ export function wsUrl(path: string): string {
   return `${proto}//${window.location.host}${path}`
 }
 
-export function formatWeights(w: Weights): string {
-  return `a=${w.a.toFixed(2)} · b=${w.b.toFixed(2)} · c=${w.c.toFixed(2)}`
+export function normalizeWeights(w: Partial<Weights> | null | undefined): Weights {
+  return {
+    a1: w?.a1 ?? w?.a ?? 0,
+    a2: w?.a2 ?? 1,
+    b1: w?.b1 ?? w?.b ?? 0,
+    b2: w?.b2 ?? 1,
+    c1: w?.c1 ?? w?.c ?? 0,
+    c2: w?.c2 ?? 1,
+    d1: w?.d1 ?? 0,
+    d2: w?.d2 ?? 1,
+    e1: w?.e1 ?? 0,
+    e2: w?.e2 ?? 1,
+    a: w?.a1 ?? w?.a ?? 0,
+    b: w?.b1 ?? w?.b ?? 0,
+    c: w?.c1 ?? w?.c ?? 0,
+  }
+}
+
+export function formatWeights(w: Partial<Weights>): string {
+  const n = normalizeWeights(w)
+  const parts = [
+    `a=${n.a1.toFixed(2)}^${n.a2.toFixed(2)}`,
+    `b=${n.b1.toFixed(2)}^${n.b2.toFixed(2)}`,
+    `c=${n.c1.toFixed(2)}^${n.c2.toFixed(2)}`,
+    `d=${n.d1.toFixed(2)}^${n.d2.toFixed(2)}`,
+    `e=${n.e1.toFixed(2)}^${n.e2.toFixed(2)}`,
+  ]
+  return parts.join(' · ')
+}
+
+export function weightsToEvaluatePayload(w: Partial<Weights>): Partial<Weights> {
+  const n = normalizeWeights(w)
+  return {
+    a1: n.a1,
+    a2: n.a2,
+    b1: n.b1,
+    b2: n.b2,
+    c1: n.c1,
+    c2: n.c2,
+    d1: n.d1,
+    d2: n.d2,
+    e1: n.e1,
+    e2: n.e2,
+  }
 }

@@ -55,6 +55,9 @@ export function TournamentSetupPage() {
   const [rangeA, setRangeA] = useState<Range>({ min: 0.5, max: 2.0 })
   const [rangeB, setRangeB] = useState<Range>({ min: 0.0, max: 1.0 })
   const [rangeC, setRangeC] = useState<Range>({ min: 0.0, max: 1.0 })
+  const [rangeD, setRangeD] = useState<Range>({ min: 0.0, max: 1.0 })
+  const [rangeE, setRangeE] = useState<Range>({ min: 0.0, max: 1.0 })
+  const [rangeExp, setRangeExp] = useState<Range>({ min: 0.5, max: 1.5 })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -74,6 +77,9 @@ export function TournamentSetupPage() {
         range_a: rangeA,
         range_b: rangeB,
         range_c: rangeC,
+        range_d: rangeD,
+        range_e: rangeE,
+        range_exp: rangeExp,
       })
       navigate(`/tournament/${t.id}`)
     } catch (err) {
@@ -87,7 +93,8 @@ export function TournamentSetupPage() {
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-4xl font-bold text-[var(--color-felt-deep)]">New tournament</h1>
       <p className="mt-2 text-[var(--color-ink-soft)]">
-        Spawn bots with random weights and let them duel. Unwatched games run at full speed; open any game to watch live (≈1s per move).
+        Spawn bots with random power-form weights and let them duel. Unwatched games run at full speed; open any game to watch live (≈1s per move).
+        Depth is in plies (depth 4 ≈ M2).
       </p>
 
       <div className="mt-8 grid gap-4">
@@ -104,7 +111,7 @@ export function TournamentSetupPage() {
             />
           </label>
           <label className="text-sm">
-            <span className="mb-1 block font-medium">Search depth</span>
+            <span className="mb-1 block font-medium">Search depth (plies)</span>
             <input
               type="number"
               min={1}
@@ -135,9 +142,12 @@ export function TournamentSetupPage() {
           </div>
         </div>
 
-        <RangeFields label="Weight a — material" hint="piece values" value={rangeA} onChange={setRangeA} />
-        <RangeFields label="Weight b — controlled squares" hint="attack coverage" value={rangeB} onChange={setRangeB} />
-        <RangeFields label="Weight c — checking moves" hint="king pressure" value={rangeC} onChange={setRangeC} />
+        <RangeFields label="Coeff a1 — material" hint="piece values" value={rangeA} onChange={setRangeA} />
+        <RangeFields label="Coeff b1 — controlled squares" hint="attack coverage" value={rangeB} onChange={setRangeB} />
+        <RangeFields label="Coeff c1 — king pressure" hint="king ring attackers" value={rangeC} onChange={setRangeC} />
+        <RangeFields label="Coeff d1 — attacked pieces" hint="enemy pieces attacked" value={rangeD} onChange={setRangeD} />
+        <RangeFields label="Coeff e1 — center control" hint="d4/d5/e4/e5" value={rangeE} onChange={setRangeE} />
+        <RangeFields label="Exponent range (all metrics)" hint="power a2…e2" value={rangeExp} onChange={setRangeExp} />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-[var(--color-ink-soft)]">

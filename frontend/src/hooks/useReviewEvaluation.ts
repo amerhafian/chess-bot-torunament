@@ -1,13 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, type Evaluation, type Weights } from '../api'
+import {
+  api,
+  weightsToEvaluatePayload,
+  type Evaluation,
+  type Weights,
+} from '../api'
 
 const BAR_SCALE = 3
 const LIVE_EMA = 0.35
+const MATE_THRESHOLD = 50000
+
+function mateLabel(score: number): string | null {
+  if (Math.abs(score) < MATE_THRESHOLD) return null
+  const plies = Math.max(0, Math.round(100000 - Math.abs(score)))
+  const moves = Math.max(1, Math.floor((plies + 1) / 2))
+  return score > 0 ? `M${moves}` : `-M${moves}`
+}
+
+function isMateLabel(label: string | undefined): boolean {
+  return Boolean(label && /^-?M\d+$/.test(label))
+}
 
 function scoreToBar(score: number): Evaluation {
-  const MATE = 50000
-  if (score >= MATE) return { score, white_pct: 100, label: 'M', source: 'search' }
-  if (score <= -MATE) return { score, white_pct: 0, label: '-M', source: 'search' }
+  const mate = mateLabel(score)
+  if (mate) {
+    return {
+      score,
+      white_pct: score > 0 ? 100 : 0,
+      label: mate,
+      source: 'search',
+    }
+  }
   const white_pct = Math.max(0, Math.min(100, 50 + 50 * Math.tanh(score / BAR_SCALE)))
   const label = `${score >= 0 ? '+' : ''}${score.toFixed(1)}`
   return { score, white_pct, label, source: 'search' }
@@ -44,7 +67,7 @@ export function useReviewEvaluation(
       return
     }
     const target = liveEvaluation.white_pct
-    if (smoothPct.current === null || liveEvaluation.label === 'M' || liveEvaluation.label === '-M') {
+    if (smoothPct.current === null || isMateLabel(liveEvaluation.label)) {
       smoothPct.current = target
     } else {
       smoothPct.current = smoothPct.current * (1 - LIVE_EMA) + target * LIVE_EMA
@@ -54,6 +77,9 @@ export function useReviewEvaluation(
       white_pct: smoothPct.current,
     })
   }, [isLive, liveEvaluation])
+
+  const w1 = weightsToEvaluatePayload(weights)
+  const w2 = weights2 ? weightsToEvaluatePayload(weights2) : undefined
 
   useEffect(() => {
     if (isLive) {
@@ -69,10 +95,8 @@ export function useReviewEvaluation(
       api
         .evaluate({
           fen,
-          a: weights.a,
-          b: weights.b,
-          c: weights.c,
-          ...(weights2 ? { a2: weights2.a, b2: weights2.b, c2: weights2.c } : {}),
+          ...w1,
+          ...(w2 ? { weights2: w2 } : {}),
         })
         .then((ev) => {
           if (!cancelled) setFallback(ev)
@@ -83,7 +107,31 @@ export function useReviewEvaluation(
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [isLive, historyEval, fen, weights.a, weights.b, weights.c, weights2?.a, weights2?.b, weights2?.c])
+  }, [
+    isLive,
+    historyEval,
+    fen,
+    w1.a1,
+    w1.a2,
+    w1.b1,
+    w1.b2,
+    w1.c1,
+    w1.c2,
+    w1.d1,
+    w1.d2,
+    w1.e1,
+    w1.e2,
+    w2?.a1,
+    w2?.a2,
+    w2?.b1,
+    w2?.b2,
+    w2?.c1,
+    w2?.c2,
+    w2?.d1,
+    w2?.d2,
+    w2?.e1,
+    w2?.e2,
+  ])
 
   if (isLive) return smoothedLive ?? liveEvaluation
   return historyEval ?? fallback

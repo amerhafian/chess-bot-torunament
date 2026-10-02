@@ -1,13 +1,24 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type SavedWeights } from '../api'
+import { api, formatWeights, type SavedWeights } from '../api'
+
+const DEFAULTS = {
+  a1: 1,
+  a2: 1,
+  b1: 0.5,
+  b2: 1,
+  c1: 0.5,
+  c2: 1,
+  d1: 0.3,
+  d2: 1,
+  e1: 0.3,
+  e2: 1,
+}
 
 export function WeightsPage() {
   const [items, setItems] = useState<SavedWeights[]>([])
   const [name, setName] = useState('')
-  const [a, setA] = useState(1)
-  const [b, setB] = useState(0.5)
-  const [c, setC] = useState(0.5)
+  const [vals, setVals] = useState(DEFAULTS)
   const [error, setError] = useState<string | null>(null)
 
   const reload = () => api.listWeights().then(setItems)
@@ -19,7 +30,7 @@ export function WeightsPage() {
   const save = async () => {
     setError(null)
     try {
-      await api.saveWeights({ name: name || 'Custom weights', a, b, c, source: 'manual' })
+      await api.saveWeights({ name: name || 'Custom weights', ...vals, source: 'manual' })
       setName('')
       await reload()
     } catch (e) {
@@ -32,17 +43,30 @@ export function WeightsPage() {
     await reload()
   }
 
+  const fields: Array<[keyof typeof DEFAULTS, string]> = [
+    ['a1', 'a1 material'],
+    ['a2', 'a2 exp'],
+    ['b1', 'b1 controlled'],
+    ['b2', 'b2 exp'],
+    ['c1', 'c1 king'],
+    ['c2', 'c2 exp'],
+    ['d1', 'd1 attacked'],
+    ['d2', 'd2 exp'],
+    ['e1', 'e1 center'],
+    ['e2', 'e2 exp'],
+  ]
+
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-4xl font-bold text-[var(--color-felt-deep)]">Weights library</h1>
       <p className="mt-2 text-[var(--color-ink-soft)]">
-        Save evaluation weight triples from tournament winners or create your own presets.
+        Save power-form evaluation weights (coeff × metric^exp) from tournament winners or create your own.
       </p>
 
       <div className="panel mt-8 rounded-xl p-5">
         <h2 className="font-display text-xl font-semibold">Save new weights</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-4">
-          <label className="text-sm sm:col-span-4">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className="text-sm sm:col-span-2">
             <span className="mb-1 block">Name</span>
             <input
               className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
@@ -51,19 +75,15 @@ export function WeightsPage() {
               placeholder="My champion"
             />
           </label>
-          {([
-            ['a', a, setA],
-            ['b', b, setB],
-            ['c', c, setC],
-          ] as const).map(([key, val, setVal]) => (
+          {fields.map(([key, label]) => (
             <label key={key} className="text-sm">
-              <span className="mb-1 block">{key}</span>
+              <span className="mb-1 block">{label}</span>
               <input
                 type="number"
                 step="0.01"
                 className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
-                value={val}
-                onChange={(e) => setVal(Number(e.target.value))}
+                value={vals[key]}
+                onChange={(e) => setVals({ ...vals, [key]: Number(e.target.value) })}
               />
             </label>
           ))}
@@ -80,7 +100,7 @@ export function WeightsPage() {
             <div>
               <p className="font-semibold">{w.name}</p>
               <p className="text-sm text-[var(--color-ink-soft)]">
-                a={w.a.toFixed(3)} · b={w.b.toFixed(3)} · c={w.c.toFixed(3)}
+                {formatWeights(w)}
                 {w.bot_name ? ` · ${w.bot_name}` : ''}
               </p>
             </div>

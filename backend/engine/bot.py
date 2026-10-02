@@ -155,6 +155,7 @@ def _choose_move_serial(
             board.turn == chess.WHITE,
             weights,
             tt,
+            ply=1,
         )
         board.pop()
         if maximizing:
@@ -213,12 +214,12 @@ def _choose_move_serial_in_process(
     return chess.Move.from_uci(move_uci), score
 
 
-def _score_root_move(payload: tuple[str, str, int, tuple[float, float, float]]) -> tuple[str, float]:
+def _score_root_move(payload: tuple[str, str, int, tuple[float, ...]]) -> tuple[str, float]:
     """Worker entry: score one root move. Must be top-level for pickling."""
     fen, move_uci, depth, weight_tuple = payload
     board = chess.Board(fen)
     move = chess.Move.from_uci(move_uci)
-    weights = Weights(*weight_tuple)
+    weights = Weights.from_tuple(weight_tuple)
     board.push(move)
     tt: dict = {}
     score = _alphabeta(
@@ -229,18 +230,19 @@ def _score_root_move(payload: tuple[str, str, int, tuple[float, float, float]]) 
         board.turn == chess.WHITE,
         weights,
         tt,
+        ply=1,
     )
     return move_uci, score
 
 
 def _serial_search_worker(
-    payload: tuple[str, list[str], int, tuple[float, float, float]],
+    payload: tuple[str, list[str], int, tuple[float, ...]],
 ) -> tuple[str, float]:
     """Worker entry: full serial root search in a background process."""
     fen, move_ucis, depth, weight_tuple = payload
     board = chess.Board(fen)
     ordered = [chess.Move.from_uci(u) for u in move_ucis]
-    weights = Weights(*weight_tuple)
+    weights = Weights.from_tuple(weight_tuple)
     move, score = _choose_move_serial(board, ordered, weights, depth)
     return move.uci(), score
 
@@ -278,6 +280,7 @@ def _alphabeta(
     maximizing: bool,
     weights: Weights,
     tt: dict,
+    ply: int = 0,
 ) -> float:
     alpha_orig = alpha
     key = board._transposition_key()
@@ -295,11 +298,11 @@ def _alphabeta(
                 return e_score
 
     if depth == 0 or _is_cheap_terminal(board):
-        return evaluate(board, weights, depth_remaining=depth)
+        return evaluate(board, weights, ply_from_root=ply)
 
     moves = _order_moves(board, list(board.legal_moves))
     if not moves:
-        return evaluate(board, weights, depth_remaining=depth)
+        return evaluate(board, weights, ply_from_root=ply)
 
     if maximizing:
         value = float("-inf")
@@ -307,7 +310,7 @@ def _alphabeta(
             board.push(move)
             value = max(
                 value,
-                _alphabeta(board, depth - 1, alpha, beta, False, weights, tt),
+                _alphabeta(board, depth - 1, alpha, beta, False, weights, tt, ply + 1),
             )
             board.pop()
             alpha = max(alpha, value)
@@ -319,7 +322,7 @@ def _alphabeta(
             board.push(move)
             value = min(
                 value,
-                _alphabeta(board, depth - 1, alpha, beta, True, weights, tt),
+                _alphabeta(board, depth - 1, alpha, beta, True, weights, tt, ply + 1),
             )
             board.pop()
             beta = min(beta, value)

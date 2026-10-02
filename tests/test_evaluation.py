@@ -8,14 +8,18 @@ import chess
 
 from backend.engine.bot import DEFAULT_DEPTH, Bot
 from backend.engine.evaluation import (
+    MATE_SCORE,
     PIECE_VALUES,
     Weights,
+    attacked_pieces_balance,
+    center_control_balance,
     checking_moves_balance,
     compute_metrics,
     controlled_squares_balance,
     evaluate,
     material_balance,
     score_to_bar,
+    signed_pow,
 )
 
 
@@ -62,18 +66,69 @@ def test_king_pressure_scholars_mate_threat():
     assert checking_moves_balance(board) > 0
 
 
-def test_evaluate_weighted_sum_uses_metric_scales():
-    from backend.engine.evaluation import CONTROLLED_SCALE, KING_SCALE
+def test_evaluate_power_form_uses_metric_scales():
+    from backend.engine.evaluation import (
+        ATTACK_SCALE,
+        CENTER_SCALE,
+        CONTROLLED_SCALE,
+        KING_SCALE,
+    )
 
     board = chess.Board()
-    weights = Weights(material=1.0, controlled=1.0, checking=1.0)
+    weights = Weights(
+        material=1.0,
+        controlled=1.0,
+        checking=1.0,
+        attacked=1.0,
+        center=1.0,
+        material_exp=1.0,
+        controlled_exp=1.0,
+        checking_exp=1.0,
+        attacked_exp=1.0,
+        center_exp=1.0,
+    )
     metrics = compute_metrics(board)
     expected = (
-        weights.material * metrics.material
-        + weights.controlled * (metrics.controlled / CONTROLLED_SCALE)
-        + weights.checking * (metrics.checking / KING_SCALE)
+        weights.material * signed_pow(float(metrics.material), 1.0)
+        + weights.controlled * signed_pow(metrics.controlled / CONTROLLED_SCALE, 1.0)
+        + weights.checking * signed_pow(metrics.checking / KING_SCALE, 1.0)
+        + weights.attacked * signed_pow(metrics.attacked / ATTACK_SCALE, 1.0)
+        + weights.center * signed_pow(metrics.center / CENTER_SCALE, 1.0)
     )
     assert evaluate(board, weights) == expected
+
+
+def test_legacy_weights_dict_loads():
+    w = Weights.from_dict({"a": 2.0, "b": 0.5, "c": 0.25})
+    assert w.material == 2.0
+    assert w.controlled == 0.5
+    assert w.checking == 0.25
+    assert w.attacked == 0.0
+    assert w.material_exp == 1.0
+
+
+def test_attacked_and_center_metrics_nonzero_midgame():
+    board = chess.Board()
+    board.push_san("e4")
+    board.push_san("e5")
+    board.push_san("Nf3")
+    board.push_san("Nc6")
+    assert attacked_pieces_balance(board) != 0 or center_control_balance(board) != 0
+    metrics = compute_metrics(board)
+    assert isinstance(metrics.attacked, int)
+    assert isinstance(metrics.center, int)
+
+
+def test_shorter_mate_scores_higher():
+    # Black to move, checkmated (queen + king).
+    board = chess.Board("6k1/6Q1/6K1/8/8/8/8/8 b - - 0 1")
+    assert board.is_checkmate()
+    short = evaluate(board, Weights(1, 0, 0), ply_from_root=1)
+    long = evaluate(board, Weights(1, 0, 0), ply_from_root=5)
+    assert short > long > 0
+    assert score_to_bar(short)["label"] == "M1"
+    assert score_to_bar(long)["label"] == "M3"
+    assert short == MATE_SCORE - 1
 
 
 def test_one_pawn_up_is_about_one_on_bar():

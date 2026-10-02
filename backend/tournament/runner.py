@@ -123,6 +123,13 @@ class TournamentManager:
                 material=rng.uniform(config.range_a.min, config.range_a.max),
                 controlled=rng.uniform(config.range_b.min, config.range_b.max),
                 checking=rng.uniform(config.range_c.min, config.range_c.max),
+                attacked=rng.uniform(config.range_d.min, config.range_d.max),
+                center=rng.uniform(config.range_e.min, config.range_e.max),
+                material_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
+                controlled_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
+                checking_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
+                attacked_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
+                center_exp=rng.uniform(config.range_exp.min, config.range_exp.max),
             )
             bots.append(
                 BotSpec(
@@ -428,7 +435,17 @@ def parse_config(data: dict[str, Any]) -> TournamentConfig:
     range_a = rng("range_a", 0.5, 2.0)
     range_b = rng("range_b", 0.0, 1.0)
     range_c = rng("range_c", 0.0, 1.0)
-    for label, r in (("a", range_a), ("b", range_b), ("c", range_c)):
+    range_d = rng("range_d", 0.0, 1.0)
+    range_e = rng("range_e", 0.0, 1.0)
+    range_exp = rng("range_exp", 0.5, 1.5)
+    for label, r in (
+        ("a", range_a),
+        ("b", range_b),
+        ("c", range_c),
+        ("d", range_d),
+        ("e", range_e),
+        ("exp", range_exp),
+    ):
         if r.min > r.max:
             raise ValueError(f"range_{label} min must be <= max")
 
@@ -440,5 +457,8 @@ def parse_config(data: dict[str, Any]) -> TournamentConfig:
         range_a=range_a,
         range_b=range_b,
         range_c=range_c,
+        range_d=range_d,
+        range_e=range_e,
+        range_exp=range_exp,
         seed=int(seed) if seed is not None else None,
     )

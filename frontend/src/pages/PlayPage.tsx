@@ -24,6 +24,7 @@ function PlaySessionView({
   onDrop: (source: string, target: string) => boolean
   onNewGame: () => void
 }) {
+  const isSf = session.mode === 'stockfish'
   const review = useGameReview(session.moves, session.fen)
   const evaluation = useReviewEvaluation(
     review.isLive,
@@ -33,22 +34,45 @@ function PlaySessionView({
     session.eval_history,
     session.weights,
   )
+  const sfEvaluation = useReviewEvaluation(
+    review.isLive,
+    session.sf_evaluation ?? undefined,
+    review.displayFen,
+    review.ply,
+    session.sf_eval_history,
+    session.weights,
+  )
+  const orientation = isSf
+    ? session.bot_color || 'white'
+    : session.human_color
 
   return (
     <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-bold text-[var(--color-felt-deep)]">
-            You vs {session.bot_name}
+            {isSf
+              ? `${session.bot_name} vs Stockfish`
+              : `You vs ${session.bot_name}`}
           </h1>
           <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
-            {formatWeights(session.weights)} · depth {session.depth} · you play {session.human_color}
+            {formatWeights(session.weights)} · bot depth {session.depth}
+            {isSf
+              ? ` · SF depth ${session.stockfish_depth ?? 14} · Stockfish plays ${session.stockfish_color}`
+              : ` · you play ${session.human_color}`}
+          </p>
+          <p className="mt-1 text-xs text-[var(--color-ink-soft)]">
+            Depth is in plies (depth 4 ≈ M2; M4 needs ~7–8 plies).
           </p>
         </div>
         <div className="flex gap-2">
           <StatusPill
             status={
-              session.status === 'finished' ? 'finished' : session.bot_thinking ? 'running' : 'active'
+              session.status === 'finished'
+                ? 'finished'
+                : session.bot_thinking || session.sf_thinking
+                  ? 'running'
+                  : 'active'
             }
           />
           <button type="button" className="btn-secondary rounded-md px-3 py-1.5 text-sm" onClick={onNewGame}>
@@ -60,15 +84,24 @@ function PlaySessionView({
       <div className="grid gap-6 md:grid-cols-[auto_1fr]">
         <div className="space-y-3">
           <div className="flex items-stretch gap-2">
-            <EvalBar
-              evaluation={evaluation}
-              height={380}
-              orientation={session.human_color}
-            />
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-soft)]">
+                Bot
+              </span>
+              <EvalBar evaluation={evaluation} height={380} orientation={orientation} />
+            </div>
+            {isSf && (
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-ink-soft)]">
+                  SF
+                </span>
+                <EvalBar evaluation={sfEvaluation} height={380} orientation={orientation} />
+              </div>
+            )}
             <Board
               fen={review.displayFen}
-              orientation={session.human_color}
-              arePiecesDraggable={canDrag && review.isLive}
+              orientation={orientation}
+              arePiecesDraggable={canDrag && review.isLive && !isSf}
               onPieceDrop={onDrop}
               boardWidth={380}
             />
@@ -87,8 +120,10 @@ function PlaySessionView({
         </div>
         <div className="panel rounded-xl p-4">
           <h2 className="font-display text-xl font-semibold">Moves</h2>
-          {session.bot_thinking && review.isLive && (
-            <p className="mt-2 text-sm text-[var(--color-accent)]">Bot is thinking…</p>
+          {(session.bot_thinking || session.sf_thinking) && review.isLive && (
+            <p className="mt-2 text-sm text-[var(--color-accent)]">
+              {session.sf_thinking ? 'Stockfish is thinking…' : 'Bot is thinking…'}
+            </p>
           )}
           {session.result && (
             <p className="mt-2 text-sm font-semibold text-[var(--color-felt-deep)]">
@@ -103,7 +138,9 @@ function PlaySessionView({
             className="mt-3 max-h-[280px] overflow-auto"
           />
           <p className="mt-4 text-xs text-[var(--color-ink-soft)]">
-            Drag pieces to move (live only). ← → scrub history; click a move to jump.
+            {isSf
+              ? 'Auto-play match. ← → scrub history; click a move to jump.'
+              : 'Drag pieces to move (live only). ← → scrub history; click a move to jump.'}
           </p>
         </div>
       </div>
@@ -115,12 +152,19 @@ export function PlayPage() {
   const [params] = useSearchParams()
   const [weights, setWeights] = useState<SavedWeights[]>([])
   const [mode, setMode] = useState<'import' | 'random'>('random')
+  const [playMode, setPlayMode] = useState<'human' | 'stockfish'>('human')
   const [weightId, setWeightId] = useState(params.get('weight') || '')
   const [humanColor, setHumanColor] = useState<'white' | 'black'>('white')
+  const [stockfishColor, setStockfishColor] = useState<'white' | 'black'>('white')
   const [depth, setDepth] = useState(3)
+  const [sfDepth, setSfDepth] = useState(14)
+  const [sfAvailable, setSfAvailable] = useState<boolean | null>(null)
   const [rangeA, setRangeA] = useState({ min: 0.5, max: 2 })
   const [rangeB, setRangeB] = useState({ min: 0, max: 1 })
   const [rangeC, setRangeC] = useState({ min: 0, max: 1 })
+  const [rangeD, setRangeD] = useState({ min: 0, max: 1 })
+  const [rangeE, setRangeE] = useState({ min: 0, max: 1 })
+  const [rangeExp, setRangeExp] = useState({ min: 0.5, max: 1.5 })
   const [session, setSession] = useState<PlaySession | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
@@ -133,6 +177,7 @@ export function PlayPage() {
         setWeightId(params.get('weight') || '')
       }
     })
+    api.stockfishStatus().then((s) => setSfAvailable(s.available)).catch(() => setSfAvailable(false))
   }, [params])
 
   useWebSocket<{ type: string; session?: PlaySession }>(
@@ -146,16 +191,31 @@ export function PlayPage() {
     setStarting(true)
     setError(null)
     try {
-      const body =
+      const base =
         mode === 'import'
-          ? { weight_id: weightId, depth, human_color: humanColor }
+          ? { weight_id: weightId, depth }
           : {
               randomize: true,
               depth,
-              human_color: humanColor,
               range_a: rangeA,
               range_b: rangeB,
               range_c: rangeC,
+              range_d: rangeD,
+              range_e: rangeE,
+              range_exp: rangeExp,
+            }
+      const body =
+        playMode === 'stockfish'
+          ? {
+              ...base,
+              mode: 'stockfish',
+              stockfish_color: stockfishColor,
+              stockfish_depth: sfDepth,
+            }
+          : {
+              ...base,
+              mode: 'human',
+              human_color: humanColor,
             }
       const s = await api.createPlay(body)
       setSession(s)
@@ -168,6 +228,7 @@ export function PlayPage() {
 
   const onDrop = (source: string, target: string): boolean => {
     if (!session || session.status !== 'active' || session.bot_thinking) return false
+    if (session.mode === 'stockfish') return false
     if (session.turn !== session.human_color) return false
 
     const chess = new Chess(session.fen)
@@ -190,6 +251,7 @@ export function PlayPage() {
   const canDrag = useMemo(() => {
     return Boolean(
       session &&
+        session.mode !== 'stockfish' &&
         session.status === 'active' &&
         !session.bot_thinking &&
         session.turn === session.human_color,
@@ -210,12 +272,36 @@ export function PlayPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="font-display text-4xl font-bold text-[var(--color-felt-deep)]">Play against a bot</h1>
+      <h1 className="font-display text-4xl font-bold text-[var(--color-felt-deep)]">Play</h1>
       <p className="mt-2 text-[var(--color-ink-soft)]">
-        Import saved weights (e.g. a tournament winner) or randomize a fresh opponent.
+        Human vs bot, or watch a weighted bot face Stockfish. Depth is in plies (depth 4 ≈ M2).
       </p>
 
       <div className="panel mt-8 space-y-5 rounded-xl p-5">
+        <div className="flex overflow-hidden rounded-md border border-[rgba(92,58,26,0.25)]">
+          <button
+            type="button"
+            className={`flex-1 px-3 py-2 text-sm ${playMode === 'human' ? 'bg-[var(--color-felt)] text-[#f5f0e6]' : 'bg-white/60'}`}
+            onClick={() => setPlayMode('human')}
+          >
+            You vs bot
+          </button>
+          <button
+            type="button"
+            className={`flex-1 px-3 py-2 text-sm ${playMode === 'stockfish' ? 'bg-[var(--color-felt)] text-[#f5f0e6]' : 'bg-white/60'}`}
+            onClick={() => setPlayMode('stockfish')}
+          >
+            Bot vs Stockfish
+          </button>
+        </div>
+
+        {playMode === 'stockfish' && sfAvailable === false && (
+          <p className="text-sm text-rose-700">
+            Stockfish binary not found on this server. Install <code>stockfish</code> or set{' '}
+            <code>STOCKFISH_PATH</code>.
+          </p>
+        )}
+
         <div className="flex overflow-hidden rounded-md border border-[rgba(92,58,26,0.25)]">
           <button
             type="button"
@@ -244,7 +330,7 @@ export function PlayPage() {
               <option value="">Select…</option>
               {weights.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.name} (a={w.a.toFixed(2)}, b={w.b.toFixed(2)}, c={w.c.toFixed(2)})
+                  {w.name} ({formatWeights(w)})
                 </option>
               ))}
             </select>
@@ -257,13 +343,20 @@ export function PlayPage() {
           </label>
         ) : (
           <div className="grid gap-3 sm:grid-cols-3">
-            {([
-              ['a', rangeA, setRangeA],
-              ['b', rangeB, setRangeB],
-              ['c', rangeC, setRangeC],
-            ] as const).map(([key, val, setVal]) => (
+            {(
+              [
+                ['a1', rangeA, setRangeA],
+                ['b1', rangeB, setRangeB],
+                ['c1', rangeC, setRangeC],
+                ['d1', rangeD, setRangeD],
+                ['e1', rangeE, setRangeE],
+                ['exp', rangeExp, setRangeExp],
+              ] as const
+            ).map(([key, val, setVal]) => (
               <div key={key} className="rounded-lg bg-white/50 p-3">
-                <p className="mb-2 text-sm font-medium">Weight {key}</p>
+                <p className="mb-2 text-sm font-medium">
+                  {key === 'exp' ? 'Exponent range' : `Coeff ${key}`}
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     type="number"
@@ -288,19 +381,33 @@ export function PlayPage() {
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
+          {playMode === 'human' ? (
+            <label className="text-sm">
+              <span className="mb-1 block font-medium">Your color</span>
+              <select
+                className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
+                value={humanColor}
+                onChange={(e) => setHumanColor(e.target.value as 'white' | 'black')}
+              >
+                <option value="white">White</option>
+                <option value="black">Black</option>
+              </select>
+            </label>
+          ) : (
+            <label className="text-sm">
+              <span className="mb-1 block font-medium">Stockfish color</span>
+              <select
+                className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
+                value={stockfishColor}
+                onChange={(e) => setStockfishColor(e.target.value as 'white' | 'black')}
+              >
+                <option value="white">White</option>
+                <option value="black">Black</option>
+              </select>
+            </label>
+          )}
           <label className="text-sm">
-            <span className="mb-1 block font-medium">Your color</span>
-            <select
-              className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
-              value={humanColor}
-              onChange={(e) => setHumanColor(e.target.value as 'white' | 'black')}
-            >
-              <option value="white">White</option>
-              <option value="black">Black</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="mb-1 block font-medium">Search depth</span>
+            <span className="mb-1 block font-medium">Bot search depth (plies)</span>
             <input
               type="number"
               min={1}
@@ -310,13 +417,30 @@ export function PlayPage() {
               onChange={(e) => setDepth(Number(e.target.value))}
             />
           </label>
+          {playMode === 'stockfish' && (
+            <label className="text-sm sm:col-span-2">
+              <span className="mb-1 block font-medium">Stockfish depth</span>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
+                value={sfDepth}
+                onChange={(e) => setSfDepth(Number(e.target.value))}
+              />
+            </label>
+          )}
         </div>
 
         {error && <p className="text-sm text-rose-700">{error}</p>}
 
         <button
           type="button"
-          disabled={starting || (mode === 'import' && !weightId)}
+          disabled={
+            starting ||
+            (mode === 'import' && !weightId) ||
+            (playMode === 'stockfish' && sfAvailable === false)
+          }
           onClick={start}
           className="btn-primary rounded-md px-5 py-2.5 text-sm font-semibold disabled:opacity-60"
         >

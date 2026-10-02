@@ -7,17 +7,24 @@
 
 ## What this project is
 
-A browser-based platform where alpha-beta chess bots compete in tournaments. Bots share the same search algorithm; they differ only by evaluation **weights** `(a, b, c)` over three metrics:
+A browser-based platform where alpha-beta chess bots compete in tournaments. Bots share the same search algorithm; they differ by evaluation **power-form weights** over five metrics:
 
 ```
-score = a * material + b * controlled_squares + c * king_pressure
+score = a1·mat^a2 + b1·(ctrl/20)^b2 + c1·(king/4)^c2
+      + d1·(attacked/2)^d2 + e1·(center/4)^e2
 ```
 
-- **material**: P=1, N=3, B=3, R=5, Q=9 (King=0); White − Black
-- **controlled_squares**: sum of attacked squares per piece (overlaps count); White − Black
-- **king_pressure** (weight `c`): fast proxy for king safety / checking pressure — count attackers on the enemy king square **and** king-adjacent ring squares; White − Black. (Replaces the original “count all legal checking moves” leaf scan, which was too slow.)
+with `signed_pow(x,p) = sign(x)·|x|^p`.
 
-Positive scores favor White. Mate uses ±100000 adjusted by depth.
+- **material (a)**: P=1, N=3, B=3, R=5, Q=9 (King=0); White − Black
+- **controlled_squares (b)**: sum of attacked squares per piece (overlaps count); White − Black
+- **king_pressure (c)**: attackers on enemy king square and king-adjacent ring; White − Black
+- **attacked_pieces (d)**: count of enemy pieces currently attacked; White − Black
+- **center_control (e)**: attacks on d4/d5/e4/e5; White − Black
+
+Positive scores favor White. Mate uses `±(100000 − plies_to_mate)` so shorter mates score higher. Eval bar shows `Mn` / `-Mn` in **moves** (`n = (plies+1)//2`). Search **depth is in plies** (depth 4 ≈ M2; M4 needs ~7–8 plies).
+
+Legacy weight JSON `{a,b,c}` loads as coeffs with exponents `1` and `d1=e1=0`.
 
 ### Search performance
 
@@ -28,8 +35,13 @@ Positive scores favor White. Mate uses ±100000 adjusted by depth.
 - **Search lanes (isolation):** human vs bot uses `lane="interactive"` (inline search inside `asyncio.to_thread`). Tournaments use `lane="background"` with a separate process pool. They must not share a pool queue — otherwise tournaments starve live play.
 - Tournament games run concurrently via `game_concurrency()` (at least 4).
 - **Eval bar:** shows the **search score** of the last bot think (`choose_move` → `(move, score)`), Stockfish-style — not the static leaf eval of the current FEN. `eval_history` stores per-ply scores for scrubbing; human plies may be `null` until the bot replies. Static eval is only a fallback before any search exists. Live bar EMA-smooths `white_pct`; scrubbing is exact.
-- **Metric scales (pawn-ish):** `score = a*material + b*(controlled/20) + c*(king_pressure/4)`. Bar uses `tanh(score/3)`.
 - In-search terminals: mate/stalemate/insufficient/50-move, plus **threefold** via `is_repetition(2)` when `halfmove_clock >= 4`. Game loop still uses full `claim_draw=True`. Move ordering prefers captures only (no `gives_check` sort).
+
+### Stockfish
+
+- Stockfish is an **optional opponent** for Bot vs Stockfish play (`mode=stockfish`), not a replacement for bot evaluation.
+- Binary via `STOCKFISH_PATH` or `PATH` (`stockfish`). Missing binary → HTTP 503 on create.
+- User picks Stockfish’s color; dual eval bars show bot search score and SF analysis score.
 
 ## Stack
 
@@ -43,9 +55,9 @@ Positive scores favor White. Mate uses ±100000 adjusted by depth.
 
 ```
 backend/
-  engine/          # evaluation.py, bot.py (alpha-beta), names.py
+  engine/          # evaluation.py, bot.py (alpha-beta), stockfish.py, names.py
   tournament/      # models, formats (RR + elimination), runner
-  play/            # human vs bot sessions
+  play/            # human vs bot + bot vs Stockfish sessions
   weights/         # JSON store
   api/routes.py    # REST + WS
   main.py          # FastAPI app
@@ -59,6 +71,9 @@ data/weights/      # saved weight presets
 ```bash
 # Backend (from repo root)
 pip install -r requirements.txt
+# Optional: Stockfish for Bot vs SF play
+#   sudo apt-get install -y stockfish
+#   # or: export STOCKFISH_PATH=/path/to/stockfish
 PYTHONPATH=. uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Frontend (dev, proxies /api and /ws)
@@ -74,11 +89,11 @@ PYTHONPATH=. pytest -q
 
 ## Product rules agents must keep
 
-1. Default search **depth is 3** (configurable 1–8 in UI/API).
+1. Default search **depth is 3** (configurable 1–8 in UI/API). Depth is **plies**; mate labels are **moves** (`Mn`).
 2. Tournament formats: **both** round-robin (two games per pair, colors swapped) and single elimination (byes if needed; draws → rematch swapped colors → random if still drawn).
 3. Unwatched games run **as fast as possible**. Watched games (WebSocket subscribers on `/ws/games/{id}`) pace at **≥1 second per move**. Multiple games can be watched at once.
 4. No chess clocks / time controls unless explicitly requested.
-5. Keep the three-metric linear weight formula (`a·x + b·y + c·z`). Metric `z` is king-pressure (see above), not a full checking-move generator. Do not replace with NNUE/Stockfish/etc.
+5. Keep the **five-metric power-form** weight formula (`coeff · signed_pow(scaled_metric, exp)`). Do **not** replace bot evaluation with NNUE/Stockfish. Stockfish may be used only as an **opponent** in play mode.
 6. Move ordering may use cheap heuristics (captures/checks first); that does not change which move alpha-beta selects at a given depth.
 
 ## API sketch
@@ -89,7 +104,9 @@ PYTHONPATH=. pytest -q
 - `WS /ws/games/{id}` — subscribe to watch (enables pacing)
 - `POST /api/weights`, `GET /api/weights`, `DELETE /api/weights/{id}`
 - `POST /api/tournaments/{id}/save-winner`
-- `POST /api/play`, `POST /api/play/{id}/move`, `WS /ws/play/{id}`
+- `POST /api/play` — human vs bot or `mode=stockfish` (Bot vs SF)
+- `POST /api/play/{id}/move`, `WS /ws/play/{id}`
+- `GET /api/stockfish` — `{available: bool}`
 
 ## Weight JSON schema
 
@@ -97,6 +114,16 @@ PYTHONPATH=. pytest -q
 {
   "id": "string",
   "name": "string",
+  "a1": 1.0,
+  "a2": 1.0,
+  "b1": 0.5,
+  "b2": 1.0,
+  "c1": 0.5,
+  "c2": 1.0,
+  "d1": 0.0,
+  "d2": 1.0,
+  "e1": 0.0,
+  "e2": 1.0,
   "a": 1.0,
   "b": 0.5,
   "c": 0.5,
@@ -105,6 +132,8 @@ PYTHONPATH=. pytest -q
   "created_at": 0.0
 }
 ```
+
+Legacy files with only `a,b,c` are still loadable.
 
 ## Conventions
 

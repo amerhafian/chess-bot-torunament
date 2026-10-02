@@ -23,15 +23,28 @@ def _safe_filename(name: str) -> str:
     return cleaned or "weights"
 
 
+def _normalize_saved(data: dict[str, Any], weight_id: str) -> dict[str, Any]:
+    """Ensure saved payloads expose power-form keys plus legacy a/b/c."""
+    weights = Weights.from_dict(data)
+    payload = {
+        "id": weight_id,
+        "name": data.get("name", weight_id),
+        **weights.to_dict(),
+        "source": data.get("source"),
+        "bot_name": data.get("bot_name"),
+        "created_at": data.get("created_at", 0),
+    }
+    return payload
+
+
 def list_weights() -> list[dict[str, Any]]:
     _ensure_dir()
     items: list[dict[str, Any]] = []
     for path in sorted(WEIGHTS_DIR.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            data.setdefault("id", path.stem)
-            items.append(data)
-        except (json.JSONDecodeError, OSError):
+            items.append(_normalize_saved(data, data.get("id", path.stem)))
+        except (json.JSONDecodeError, OSError, KeyError, TypeError, ValueError):
             continue
     items.sort(key=lambda d: d.get("created_at", 0), reverse=True)
     return items
@@ -44,9 +57,8 @@ def get_weights(weight_id: str) -> Optional[dict[str, Any]]:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        data.setdefault("id", weight_id)
-        return data
-    except (json.JSONDecodeError, OSError):
+        return _normalize_saved(data, weight_id)
+    except (json.JSONDecodeError, OSError, KeyError, TypeError, ValueError):
         return None
 
 
@@ -63,9 +75,7 @@ def save_weights(
     payload = {
         "id": wid,
         "name": name,
-        "a": weights.material,
-        "b": weights.controlled,
-        "c": weights.checking,
+        **weights.to_dict(),
         "source": source,
         "bot_name": bot_name,
         "created_at": time.time(),

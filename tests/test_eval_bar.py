@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import chess
 
-from backend.engine.evaluation import Weights, display_eval, display_eval_averaged, score_to_bar
+from backend.engine.evaluation import (
+    MATE_SCORE,
+    Weights,
+    display_eval,
+    display_eval_averaged,
+    score_to_bar,
+)
 from backend.play.manager import PlaySession
 from backend.tournament.models import BotSpec, GameState
 
@@ -55,5 +61,9 @@ def test_averaged_eval_is_finite():
 
 
 def test_score_to_bar_mate_labels():
-    assert score_to_bar(100_000)["label"] == "M"
-    assert score_to_bar(-100_000)["label"] == "-M"
+    # Mate in 1 ply → M1
+    assert score_to_bar(MATE_SCORE - 1)["label"] == "M1"
+    assert score_to_bar(-(MATE_SCORE - 1))["label"] == "-M1"
+    # Mate in 3 plies → M2
+    assert score_to_bar(MATE_SCORE - 3)["label"] == "M2"
+    assert score_to_bar(-(MATE_SCORE - 3))["label"] == "-M2"

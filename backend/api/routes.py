@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 import chess
 
 from backend.engine.evaluation import Weights, display_eval, display_eval_averaged
+from backend.engine.stockfish import StockfishUnavailable, stockfish_available
 from backend.play.manager import play_manager, random_weights
 from backend.tournament.models import TournamentFormat, WeightRange
 from backend.tournament.runner import manager, parse_config
@@ -23,6 +24,28 @@ class WeightRangeIn(BaseModel):
     max: float
 
 
+class WeightsFields(BaseModel):
+    """Power-form weights with legacy a/b/c aliases."""
+
+    a1: Optional[float] = None
+    a2: Optional[float] = None
+    b1: Optional[float] = None
+    b2: Optional[float] = None
+    c1: Optional[float] = None
+    c2: Optional[float] = None
+    d1: Optional[float] = None
+    d2: Optional[float] = None
+    e1: Optional[float] = None
+    e2: Optional[float] = None
+    a: Optional[float] = None
+    b: Optional[float] = None
+    c: Optional[float] = None
+
+
+def weights_from_fields(body: WeightsFields) -> Weights:
+    return Weights.from_dict(body.model_dump(exclude_none=True))
+
+
 class TournamentCreateIn(BaseModel):
     bot_count: int = Field(default=4, ge=2, le=32)
     format: TournamentFormat = TournamentFormat.ROUND_ROBIN
@@ -30,14 +53,14 @@ class TournamentCreateIn(BaseModel):
     range_a: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.5, max=2.0))
     range_b: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
     range_c: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
+    range_d: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
+    range_e: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
+    range_exp: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.5, max=1.5))
     seed: Optional[int] = None
 
 
-class SaveWeightsIn(BaseModel):
+class SaveWeightsIn(WeightsFields):
     name: str
-    a: float
-    b: float
-    c: float
     source: Optional[str] = None
     bot_name: Optional[str] = None
 
@@ -46,17 +69,20 @@ class SaveWinnerIn(BaseModel):
     name: Optional[str] = None
 
 
-class PlayCreateIn(BaseModel):
+class PlayCreateIn(WeightsFields):
     depth: int = Field(default=3, ge=1, le=8)
     human_color: str = Field(default="white", pattern="^(white|black)$")
+    mode: str = Field(default="human", pattern="^(human|stockfish)$")
+    stockfish_color: str = Field(default="white", pattern="^(white|black)$")
+    stockfish_depth: int = Field(default=14, ge=1, le=30)
     weight_id: Optional[str] = None
-    a: Optional[float] = None
-    b: Optional[float] = None
-    c: Optional[float] = None
     randomize: bool = False
     range_a: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.5, max=2.0))
     range_b: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
     range_c: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
+    range_d: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
+    range_e: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
+    range_exp: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.5, max=1.5))
     bot_name: Optional[str] = None
 
 
@@ -64,19 +90,20 @@ class HumanMoveIn(BaseModel):
     move: str
 
 
-class EvaluateIn(BaseModel):
+class EvaluateIn(WeightsFields):
     fen: str
-    a: float
-    b: float
-    c: float
-    a2: Optional[float] = None
-    b2: Optional[float] = None
-    c2: Optional[float] = None
+    # Optional second weight set for averaged static eval (tournament review).
+    weights2: Optional[dict[str, float]] = None
 
 
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.get("/stockfish")
+async def stockfish_status() -> dict[str, Any]:
+    return {"available": stockfish_available()}
 
 
 @router.post("/evaluate")
@@ -85,9 +112,14 @@ async def evaluate_position(body: EvaluateIn) -> dict[str, Any]:
         board = chess.Board(body.fen)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid FEN") from exc
-    w1 = Weights(material=body.a, controlled=body.b, checking=body.c)
-    if body.a2 is not None and body.b2 is not None and body.c2 is not None:
-        w2 = Weights(material=body.a2, controlled=body.b2, checking=body.c2)
+
+    primary = body.model_dump(
+        exclude_none=True,
+        exclude={"fen", "weights2", "name", "source", "bot_name"},
+    )
+    w1 = Weights.from_dict(primary)
+    if body.weights2:
+        w2 = Weights.from_dict(body.weights2)
         return display_eval_averaged(board, w1, w2)
     return display_eval(board, w1)
 
@@ -155,7 +187,7 @@ async def list_weights() -> list[dict[str, Any]]:
 
 @router.post("/weights")
 async def save_weights(body: SaveWeightsIn) -> dict[str, Any]:
-    weights = Weights(material=body.a, controlled=body.b, checking=body.c)
+    weights = weights_from_fields(body)
     return weight_store.save_weights(
         body.name,
         weights,
@@ -180,32 +212,62 @@ async def delete_weights(weight_id: str) -> dict[str, bool]:
     return {"deleted": True}
 
 
-@router.post("/play")
-async def create_play(body: PlayCreateIn) -> dict[str, Any]:
+def _resolve_play_weights(body: PlayCreateIn) -> tuple[Weights, Optional[str]]:
     bot_name = body.bot_name
     if body.weight_id:
         saved = weight_store.get_weights(body.weight_id)
         if saved is None:
             raise HTTPException(status_code=404, detail="Weights not found")
-        weights = Weights(material=saved["a"], controlled=saved["b"], checking=saved["c"])
-        bot_name = bot_name or saved.get("bot_name") or saved.get("name")
-    elif body.randomize or body.a is None or body.b is None or body.c is None:
-        weights = random_weights(
-            WeightRange(body.range_a.min, body.range_a.max),
-            WeightRange(body.range_b.min, body.range_b.max),
-            WeightRange(body.range_c.min, body.range_c.max),
-        )
-    else:
-        weights = Weights(material=body.a, controlled=body.b, checking=body.c)
+        return Weights.from_dict(saved), bot_name or saved.get("bot_name") or saved.get("name")
 
-    session = play_manager.create_session(
-        weights=weights,
-        depth=body.depth,
-        human_color=body.human_color,
-        bot_name=bot_name,
+    has_explicit = any(
+        v is not None
+        for v in (
+            body.a1,
+            body.b1,
+            body.c1,
+            body.d1,
+            body.e1,
+            body.a,
+            body.b,
+            body.c,
+        )
     )
-    # If human is black, bot should move first — kick off async
-    if body.human_color == "black":
+    if body.randomize or not has_explicit:
+        return (
+            random_weights(
+                WeightRange(body.range_a.min, body.range_a.max),
+                WeightRange(body.range_b.min, body.range_b.max),
+                WeightRange(body.range_c.min, body.range_c.max),
+                WeightRange(body.range_d.min, body.range_d.max),
+                WeightRange(body.range_e.min, body.range_e.max),
+                WeightRange(body.range_exp.min, body.range_exp.max),
+            ),
+            bot_name,
+        )
+    return weights_from_fields(body), bot_name
+
+
+@router.post("/play")
+async def create_play(body: PlayCreateIn) -> dict[str, Any]:
+    weights, bot_name = _resolve_play_weights(body)
+    try:
+        session = play_manager.create_session(
+            weights=weights,
+            depth=body.depth,
+            human_color=body.human_color,
+            bot_name=bot_name,
+            mode=body.mode,  # type: ignore[arg-type]
+            stockfish_color=body.stockfish_color,
+            stockfish_depth=body.stockfish_depth,
+        )
+    except StockfishUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if body.mode == "stockfish":
+        await play_manager.start_stockfish_match(session.id)
+        session = play_manager.get(session.id) or session
+    elif body.human_color == "black":
         await play_manager.maybe_bot_opening_move(session.id)
         session = play_manager.get(session.id) or session
     return session.to_dict()
@@ -231,12 +293,6 @@ async def play_move(session_id: str, body: HumanMoveIn) -> dict[str, Any]:
     return session.to_dict()
 
 
-async def _ws_pump(websocket: WebSocket, queue) -> None:
-    while True:
-        payload = await queue.get()
-        await websocket.send_json(payload)
-
-
 @router.websocket("/ws/games/{game_id}")
 async def ws_game(websocket: WebSocket, game_id: str) -> None:
     game = manager.get_game(game_id)
@@ -248,7 +304,6 @@ async def ws_game(websocket: WebSocket, game_id: str) -> None:
     await websocket.send_json({"type": "game", "game": game.to_dict()})
     try:
         while True:
-            # Also accept client pings / ignore inbound
             import asyncio
 
             recv_task = asyncio.create_task(websocket.receive_text())

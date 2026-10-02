@@ -172,6 +172,9 @@ class TournamentConfig:
     range_a: WeightRange
     range_b: WeightRange
     range_c: WeightRange
+    range_d: WeightRange
+    range_e: WeightRange
+    range_exp: WeightRange
     seed: Optional[int] = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -182,6 +185,9 @@ class TournamentConfig:
             "range_a": self.range_a.to_dict(),
             "range_b": self.range_b.to_dict(),
             "range_c": self.range_c.to_dict(),
+            "range_d": self.range_d.to_dict(),
+            "range_e": self.range_e.to_dict(),
+            "range_exp": self.range_exp.to_dict(),
             "seed": self.seed,
         }
 

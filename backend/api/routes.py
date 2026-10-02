@@ -7,7 +7,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
-from backend.engine.evaluation import Weights
+import chess
+
+from backend.engine.evaluation import Weights, display_eval, display_eval_averaged
 from backend.play.manager import play_manager, random_weights
 from backend.tournament.models import TournamentFormat, WeightRange
 from backend.tournament.runner import manager, parse_config
@@ -62,9 +64,32 @@ class HumanMoveIn(BaseModel):
     move: str
 
 
+class EvaluateIn(BaseModel):
+    fen: str
+    a: float
+    b: float
+    c: float
+    a2: Optional[float] = None
+    b2: Optional[float] = None
+    c2: Optional[float] = None
+
+
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@router.post("/evaluate")
+async def evaluate_position(body: EvaluateIn) -> dict[str, Any]:
+    try:
+        board = chess.Board(body.fen)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid FEN") from exc
+    w1 = Weights(material=body.a, controlled=body.b, checking=body.c)
+    if body.a2 is not None and body.b2 is not None and body.c2 is not None:
+        w2 = Weights(material=body.a2, controlled=body.b2, checking=body.c2)
+        return display_eval_averaged(board, w1, w2)
+    return display_eval(board, w1)
 
 
 @router.post("/tournaments")

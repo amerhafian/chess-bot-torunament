@@ -3,7 +3,11 @@ import { Link, useParams } from 'react-router-dom'
 import { api, formatWeights, type Game, type Tournament } from '../api'
 import { Board } from '../components/Board'
 import { EvalBar } from '../components/EvalBar'
+import { MoveControls } from '../components/MoveControls'
+import { MoveList } from '../components/MoveList'
 import { StatusPill } from '../components/Shell'
+import { useGameReview } from '../hooks/useGameReview'
+import { useReviewEvaluation } from '../hooks/useReviewEvaluation'
 import { useWebSocket } from '../hooks/useWebSocket'
 
 export function TournamentLivePage() {
@@ -273,6 +277,19 @@ function WatchPanel({
     )
   }
 
+  return <WatchPanelBody game={game} onClose={onClose} />
+}
+
+function WatchPanelBody({ game, onClose }: { game: Game; onClose: () => void }) {
+  const review = useGameReview(game.moves, game.fen)
+  const evaluation = useReviewEvaluation(
+    review.isLive,
+    game.evaluation,
+    review.displayFen,
+    game.white.weights,
+    game.black.weights,
+  )
+
   return (
     <div className="panel animate-[fadeUp_400ms_ease] rounded-xl p-4">
       <div className="mb-3 flex items-start justify-between gap-2">
@@ -290,17 +307,28 @@ function WatchPanel({
         </button>
       </div>
       <div className="flex items-stretch gap-2">
-        <EvalBar evaluation={game.evaluation} height={280} orientation="white" />
-        <Board fen={game.fen} boardWidth={280} />
+        <EvalBar evaluation={evaluation} height={280} orientation="white" />
+        <Board fen={review.displayFen} boardWidth={280} />
       </div>
-      <ol className="mt-3 max-h-24 overflow-auto text-xs text-[var(--color-ink-soft)]">
-        {game.moves.map((m, i) => (
-          <li key={`${i}-${m}`} className="inline">
-            {i % 2 === 0 ? `${Math.floor(i / 2) + 1}. ` : ''}
-            {m}{' '}
-          </li>
-        ))}
-      </ol>
+      <div className="mt-3">
+        <MoveControls
+          ply={review.ply}
+          total={game.moves.length}
+          isLive={review.isLive}
+          canPrev={review.canPrev}
+          canNext={review.canNext}
+          onStart={review.goStart}
+          onPrev={review.goPrev}
+          onNext={review.goNext}
+          onLive={review.goLive}
+        />
+      </div>
+      <MoveList
+        moves={game.moves}
+        ply={review.ply}
+        onSelectPly={review.goToPly}
+        className="mt-3 max-h-28 overflow-auto"
+      />
     </div>
   )
 }

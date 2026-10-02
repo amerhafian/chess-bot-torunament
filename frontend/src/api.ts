@@ -171,6 +171,21 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ move }),
     }).then((r) => json<PlaySession>(r)),
+
+  evaluate: (body: {
+    fen: string
+    a: number
+    b: number
+    c: number
+    a2?: number
+    b2?: number
+    c2?: number
+  }) =>
+    fetch('/api/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) => json<Evaluation>(r)),
 }
 
 export function wsUrl(path: string): string {

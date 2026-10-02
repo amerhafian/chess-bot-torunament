@@ -4,8 +4,110 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api, formatWeights, type PlaySession, type SavedWeights } from '../api'
 import { Board } from '../components/Board'
 import { EvalBar } from '../components/EvalBar'
+import { MoveControls } from '../components/MoveControls'
+import { MoveList } from '../components/MoveList'
 import { StatusPill } from '../components/Shell'
+import { useGameReview } from '../hooks/useGameReview'
+import { useReviewEvaluation } from '../hooks/useReviewEvaluation'
 import { useWebSocket } from '../hooks/useWebSocket'
+
+function PlaySessionView({
+  session,
+  error,
+  canDrag,
+  onDrop,
+  onNewGame,
+}: {
+  session: PlaySession
+  error: string | null
+  canDrag: boolean
+  onDrop: (source: string, target: string) => boolean
+  onNewGame: () => void
+}) {
+  const review = useGameReview(session.moves, session.fen)
+  const evaluation = useReviewEvaluation(
+    review.isLive,
+    session.evaluation,
+    review.displayFen,
+    session.weights,
+  )
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-3xl font-bold text-[var(--color-felt-deep)]">
+            You vs {session.bot_name}
+          </h1>
+          <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
+            {formatWeights(session.weights)} · depth {session.depth} · you play {session.human_color}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <StatusPill
+            status={
+              session.status === 'finished' ? 'finished' : session.bot_thinking ? 'running' : 'active'
+            }
+          />
+          <button type="button" className="btn-secondary rounded-md px-3 py-1.5 text-sm" onClick={onNewGame}>
+            New game
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-[auto_1fr]">
+        <div className="space-y-3">
+          <div className="flex items-stretch gap-2">
+            <EvalBar
+              evaluation={evaluation}
+              height={380}
+              orientation={session.human_color}
+            />
+            <Board
+              fen={review.displayFen}
+              orientation={session.human_color}
+              arePiecesDraggable={canDrag && review.isLive}
+              onPieceDrop={onDrop}
+              boardWidth={380}
+            />
+          </div>
+          <MoveControls
+            ply={review.ply}
+            total={session.moves.length}
+            isLive={review.isLive}
+            canPrev={review.canPrev}
+            canNext={review.canNext}
+            onStart={review.goStart}
+            onPrev={review.goPrev}
+            onNext={review.goNext}
+            onLive={review.goLive}
+          />
+        </div>
+        <div className="panel rounded-xl p-4">
+          <h2 className="font-display text-xl font-semibold">Moves</h2>
+          {session.bot_thinking && review.isLive && (
+            <p className="mt-2 text-sm text-[var(--color-accent)]">Bot is thinking…</p>
+          )}
+          {session.result && (
+            <p className="mt-2 text-sm font-semibold text-[var(--color-felt-deep)]">
+              Result: {session.result}
+            </p>
+          )}
+          {error && <p className="mt-2 text-sm text-rose-700">{error}</p>}
+          <MoveList
+            moves={session.moves}
+            ply={review.ply}
+            onSelectPly={review.goToPly}
+            className="mt-3 max-h-[280px] overflow-auto"
+          />
+          <p className="mt-4 text-xs text-[var(--color-ink-soft)]">
+            Drag pieces to move (live only). ← → scrub history; click a move to jump.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function PlayPage() {
   const [params] = useSearchParams()
@@ -94,65 +196,13 @@ export function PlayPage() {
 
   if (session) {
     return (
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="font-display text-3xl font-bold text-[var(--color-felt-deep)]">
-              You vs {session.bot_name}
-            </h1>
-            <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
-              {formatWeights(session.weights)} · depth {session.depth} · you play {session.human_color}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <StatusPill status={session.status === 'finished' ? 'finished' : session.bot_thinking ? 'running' : 'active'} />
-            <button type="button" className="btn-secondary rounded-md px-3 py-1.5 text-sm" onClick={() => setSession(null)}>
-              New game
-            </button>
-          </div>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-[auto_1fr]">
-          <div className="flex items-stretch gap-2">
-            <EvalBar
-              evaluation={session.evaluation}
-              height={380}
-              orientation={session.human_color}
-            />
-            <Board
-              fen={session.fen}
-              orientation={session.human_color}
-              arePiecesDraggable={canDrag}
-              onPieceDrop={onDrop}
-              boardWidth={380}
-            />
-          </div>
-          <div className="panel rounded-xl p-4">
-            <h2 className="font-display text-xl font-semibold">Moves</h2>
-            {session.bot_thinking && (
-              <p className="mt-2 text-sm text-[var(--color-accent)]">Bot is thinking…</p>
-            )}
-            {session.result && (
-              <p className="mt-2 text-sm font-semibold text-[var(--color-felt-deep)]">Result: {session.result}</p>
-            )}
-            {error && <p className="mt-2 text-sm text-rose-700">{error}</p>}
-            <ol className="mt-3 max-h-[320px] space-y-1 overflow-auto text-sm">
-              {Array.from({ length: Math.ceil(session.moves.length / 2) }, (_, i) => {
-                const w = session.moves[i * 2]
-                const b = session.moves[i * 2 + 1]
-                return (
-                  <li key={i} className="tabular-nums">
-                    {i + 1}. {w} {b || ''}
-                  </li>
-                )
-              })}
-            </ol>
-            <p className="mt-4 text-xs text-[var(--color-ink-soft)]">
-              Drag pieces to move. Pawns auto-promote to queen.
-            </p>
-          </div>
-        </div>
-      </div>
+      <PlaySessionView
+        session={session}
+        error={error}
+        canDrag={canDrag}
+        onDrop={onDrop}
+        onNewGame={() => setSession(null)}
+      />
     )
   }
 

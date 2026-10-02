@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+.env
+data/weights/*.json
+!data/weights/.gitkeep
+frontend/node_modules/
+frontend/dist/
+.DS_Store
+*.egg-info/
+.coverage
+htmlcov/

@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Source Sans 3", "Segoe UI", sans-serif;
+  --color-ink: #1a1410;
+  --color-ink-soft: #3d3229;
+  --color-cream: #f3e6d4;
+  --color-parchment: #e8d5b5;
+  --color-felt: #1f4d3a;
+  --color-felt-deep: #143528;
+  --color-wood: #8b5a2b;
+  --color-wood-dark: #5c3a1a;
+  --color-accent: #c45c26;
+  --color-accent-soft: #e8a87c;
+  --color-board-light: #f0d9b5;
+  --color-board-dark: #b58863;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background:
+      radial-gradient(ellipse 120% 80% at 10% -10%, rgba(196, 92, 38, 0.18), transparent 50%),
+      radial-gradient(ellipse 90% 60% at 100% 0%, rgba(31, 77, 58, 0.22), transparent 45%),
+      linear-gradient(165deg, #f7efe4 0%, #f3e6d4 40%, #dcc7a8 100%);
+    background-attachment: fixed;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  button {
+    font-family: inherit;
+  }
+}
+
+@layer utilities {
+  .panel {
+    background: rgba(255, 248, 238, 0.78);
+    border: 1px solid rgba(92, 58, 26, 0.18);
+    backdrop-filter: blur(8px);
+  }
+
+  .btn-primary {
+    background: var(--color-felt);
+    color: #f5f0e6;
+    transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+  }
+
+  .btn-primary:hover {
+    background: var(--color-felt-deep);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(20, 53, 40, 0.25);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--color-ink);
+    border: 1px solid rgba(92, 58, 26, 0.35);
+    transition: background 160ms ease, border-color 160ms ease;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(139, 90, 43, 0.08);
+    border-color: rgba(92, 58, 26, 0.55);
+  }
+}

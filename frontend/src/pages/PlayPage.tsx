@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, formatWeights, type PlaySession, type SavedWeights } from '../api'
 import { Board } from '../components/Board'
+import { EvalBar } from '../components/EvalBar'
 import { StatusPill } from '../components/Shell'
 import { useWebSocket } from '../hooks/useWebSocket'
 
@@ -112,13 +113,20 @@ export function PlayPage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-[auto_1fr]">
-          <Board
-            fen={session.fen}
-            orientation={session.human_color}
-            arePiecesDraggable={canDrag}
-            onPieceDrop={onDrop}
-            boardWidth={380}
-          />
+          <div className="flex items-stretch gap-2">
+            <EvalBar
+              evaluation={session.evaluation}
+              height={380}
+              orientation={session.human_color}
+            />
+            <Board
+              fen={session.fen}
+              orientation={session.human_color}
+              arePiecesDraggable={canDrag}
+              onPieceDrop={onDrop}
+              boardWidth={380}
+            />
+          </div>
           <div className="panel rounded-xl p-4">
             <h2 className="font-display text-xl font-semibold">Moves</h2>
             {session.bot_thinking && (

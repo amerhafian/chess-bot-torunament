@@ -82,6 +82,11 @@ class GameState:
     tournament_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
+        from backend.engine.evaluation import display_eval_averaged
+        import chess
+
+        board = chess.Board(self.fen)
+        evaluation = display_eval_averaged(board, self.white.weights, self.black.weights)
         return {
             "id": self.id,
             "white": self.white.to_dict(),
@@ -98,6 +103,7 @@ class GameState:
             "finished_at": self.finished_at,
             "last_move_at": self.last_move_at,
             "tournament_id": self.tournament_id,
+            "evaluation": evaluation,
         }
 
 

@@ -1,5 +1,11 @@
 export type Weights = { a: number; b: number; c: number }
 
+export type Evaluation = {
+  score: number
+  white_pct: number
+  label: string
+}
+
 export type WeightRange = { min: number; max: number }
 
 export type Bot = {
@@ -25,6 +31,7 @@ export type Game = {
   finished_at: number | null
   last_move_at: number | null
   tournament_id: string | null
+  evaluation?: Evaluation
 }
 
 export type Standing = {
@@ -94,6 +101,7 @@ export type PlaySession = {
   created_at: number
   bot_thinking: boolean
   turn: 'white' | 'black'
+  evaluation?: Evaluation
 }
 
 const json = async <T>(res: Response): Promise<T> => {

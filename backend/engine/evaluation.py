@@ -12,6 +12,7 @@ count without generating all legal moves at every leaf.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import chess
@@ -146,3 +147,44 @@ def evaluate(board: chess.Board, weights: Weights, depth_remaining: int = 0) -> 
         + weights.controlled * metrics.controlled
         + weights.checking * metrics.checking
     )
+
+
+def display_eval(board: chess.Board, weights: Weights, *, scale: float = 8.0) -> dict[str, float | str]:
+    """Static eval for UI bars. Positive score favors White.
+
+    Returns raw score, white_pct in [0, 100] for the bar fill, and a short label.
+    """
+    score = evaluate(board, weights)
+    if score >= MATE_SCORE / 2:
+        white_pct = 100.0
+        label = "M"
+    elif score <= -MATE_SCORE / 2:
+        white_pct = 0.0
+        label = "-M"
+    else:
+        white_pct = 50.0 + 50.0 * math.tanh(score / scale)
+        white_pct = max(0.0, min(100.0, white_pct))
+        label = f"{score:+.1f}"
+    return {"score": float(score), "white_pct": float(white_pct), "label": label}
+
+
+def display_eval_averaged(
+    board: chess.Board,
+    weights_a: Weights,
+    weights_b: Weights,
+    *,
+    scale: float = 8.0,
+) -> dict[str, float | str]:
+    """Average of two weight sets (e.g. white/black bots) for a neutral spectator bar."""
+    score = 0.5 * (evaluate(board, weights_a) + evaluate(board, weights_b))
+    if score >= MATE_SCORE / 2:
+        white_pct = 100.0
+        label = "M"
+    elif score <= -MATE_SCORE / 2:
+        white_pct = 0.0
+        label = "-M"
+    else:
+        white_pct = 50.0 + 50.0 * math.tanh(score / scale)
+        white_pct = max(0.0, min(100.0, white_pct))
+        label = f"{score:+.1f}"
+    return {"score": float(score), "white_pct": float(white_pct), "label": label}

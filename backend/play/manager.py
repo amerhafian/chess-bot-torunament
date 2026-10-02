@@ -32,6 +32,9 @@ class PlaySession:
     bot_thinking: bool = False
 
     def to_dict(self) -> dict[str, Any]:
+        from backend.engine.evaluation import display_eval
+
+        board = chess.Board(self.fen)
         return {
             "id": self.id,
             "bot_name": self.bot_name,
@@ -44,7 +47,8 @@ class PlaySession:
             "result": self.result,
             "created_at": self.created_at,
             "bot_thinking": self.bot_thinking,
-            "turn": "white" if chess.Board(self.fen).turn == chess.WHITE else "black",
+            "turn": "white" if board.turn == chess.WHITE else "black",
+            "evaluation": display_eval(board, self.weights),
         }
 
 

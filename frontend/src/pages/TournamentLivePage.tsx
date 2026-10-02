@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, formatWeights, type Game, type Tournament } from '../api'
 import { Board } from '../components/Board'
+import { EvalBar } from '../components/EvalBar'
 import { StatusPill } from '../components/Shell'
 import { useWebSocket } from '../hooks/useWebSocket'
 
@@ -252,9 +253,11 @@ function WatchPanel({
   const [game, setGame] = useState<Game | null>(fallback || null)
 
   useEffect(() => {
-    if (!fallback) {
-      api.getGame(gameId).then(setGame).catch(() => undefined)
+    if (fallback) {
+      setGame(fallback)
+      return
     }
+    api.getGame(gameId).then(setGame).catch(() => undefined)
   }, [gameId, fallback])
 
   useWebSocket<{ type: string; game?: Game }>(
@@ -286,7 +289,10 @@ function WatchPanel({
           Close
         </button>
       </div>
-      <Board fen={game.fen} boardWidth={280} />
+      <div className="flex items-stretch gap-2">
+        <EvalBar evaluation={game.evaluation} height={280} orientation="white" />
+        <Board fen={game.fen} boardWidth={280} />
+      </div>
       <ol className="mt-3 max-h-24 overflow-auto text-xs text-[var(--color-ink-soft)]">
         {game.moves.map((m, i) => (
           <li key={`${i}-${m}`} className="inline">

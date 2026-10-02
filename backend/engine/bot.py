@@ -27,16 +27,15 @@ _POOL_WORKERS: int = 0
 
 
 def root_worker_count() -> int:
+    """Size of the shared root-move process pool."""
     cpus = os.cpu_count() or 2
     return max(1, min(MAX_ROOT_WORKERS, cpus))
 
 
 def game_concurrency() -> int:
-    """Concurrent tournament games; keep headroom for root workers."""
+    """How many tournament games may run at once (shared search pool)."""
     cpus = os.cpu_count() or 2
-    workers = root_worker_count()
-    # Prefer fewer games when each move may use many processes.
-    return max(1, cpus // max(2, workers // 2 + 1))
+    return max(4, min(8, cpus))
 
 
 def _get_pool() -> ProcessPoolExecutor:

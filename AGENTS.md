@@ -25,7 +25,7 @@ Positive scores favor White. Mate uses ±100000 adjusted by depth.
 - **Do not** parallelize a single `evaluate()` call — too fine-grained; overhead dominates.
 - Alpha-beta uses a **per-search transposition table**.
 - At depth ≥ 3 with enough root moves, **root-move parallelism** via `ProcessPoolExecutor` (`spawn`) uses multiple CPU cores. Each worker has a private TT.
-- Tournament game concurrency is tuned via `game_concurrency()` so games and root workers do not oversubscribe cores.
+- Tournament games run concurrently via `game_concurrency()` (at least 4); root-move workers share one process pool.
 
 ## Stack
 

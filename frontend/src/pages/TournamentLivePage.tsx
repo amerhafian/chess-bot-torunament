@@ -92,7 +92,10 @@ export function TournamentLivePage() {
     return m
   }, [tournament])
 
-  const games = useMemo(() => Object.values(gameMap).sort((a, b) => a.id.localeCompare(b.id)), [gameMap])
+  const games = useMemo(() => {
+    const rank = (status: Game['status']) => (status === 'running' ? 0 : status === 'pending' ? 2 : 1)
+    return Object.values(gameMap).sort((a, b) => rank(a.status) - rank(b.status) || a.id.localeCompare(b.id))
+  }, [gameMap])
 
   const toggleWatch = (gameId: string) => {
     setWatched((prev) => (prev.includes(gameId) ? prev.filter((id) => id !== gameId) : [...prev, gameId]))

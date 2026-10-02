@@ -1,8 +1,8 @@
 """Find weights by playing real round-robin tournaments.
 
-A coarse field plays first. Each later tournament keeps the champion and
-fills the other seats with copies that differ by a smaller step on one
-coefficient. Material stays at 1 and every exponent stays at 1.
+A coarse field plays first. Each later tournament keeps every imported bot and
+the champion, and fills the other seats with copies that differ by a smaller
+step on one coefficient. Material stays at 1 and every exponent stays at 1.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from dataclasses import replace
 from typing import Any, Optional
 
 from backend.engine.evaluation import Weights
+from backend.engine.names import generate_bot_name
 from backend.tournament.models import TournamentConfig, TournamentFormat, TournamentStatus, WeightRange, new_id
 from backend.tournament.runner import manager
 from backend.weights import store as weight_store
@@ -43,10 +44,17 @@ _running = False
 _seq = 0
 
 
-def coarse_field(bot_count: int, rng: random.Random) -> list[Weights]:
-    """Distinct vectors on the coarse grid, including a material-only bot."""
-    field = [Weights(material=1.0)]
-    seen = {field[0].as_tuple()}
+def coarse_field(bot_count: int, rng: random.Random, pinned: list[Weights] | None = None) -> list[Weights]:
+    """Saved bots first, then distinct coarse vectors, including a material-only bot."""
+    pinned = list(pinned or [])
+    if len(pinned) >= bot_count:
+        raise ValueError("leave a seat open so the search can try new weights")
+    field = list(pinned)
+    seen = {weights.as_tuple() for weights in field}
+    material = Weights(material=1.0)
+    if material.as_tuple() not in seen:
+        field.append(material)
+        seen.add(material.as_tuple())
     while len(field) < bot_count:
         chosen = {name: rng.choice(COARSE_VALUES) for name in COEFFS}
         weights = replace(Weights(material=1.0), **chosen)
@@ -97,26 +105,66 @@ def _pair_probes(center: Weights, step: float, seen: set[tuple[float, ...]]) -> 
     return probes
 
 
-def fine_field(center: Weights, step: float, bot_count: int, offset: int) -> tuple[list[Weights], int]:
-    """Champion first, then seats that differ by ``step``, walking the coefficients."""
+def fine_field(
+    center: Weights,
+    step: float,
+    bot_count: int,
+    offset: int,
+    pinned: list[Weights] | None = None,
+) -> tuple[list[Weights], int]:
+    """Saved bots and the champion stay. Other seats differ from the champion by ``step``."""
+    pinned = list(pinned or [])
+    if len(pinned) >= bot_count:
+        raise ValueError("leave a seat open so the search can try new weights")
+    field: list[Weights] = []
+    seen: set[tuple[float, ...]] = set()
+
+    def add(weights: Weights) -> None:
+        key = weights.as_tuple()
+        if key in seen or len(field) >= bot_count:
+            return
+        seen.add(key)
+        field.append(weights)
+
+    for weights in pinned:
+        add(weights)
+    if not pinned:
+        field = [center]
+        seen = {center.as_tuple()}
+    else:
+        add(center)
+    probe_slots = bot_count - len(field)
     options = _single_probes(center, step)
-    need = max(0, bot_count - 1)
-    field = [center]
-    seen = {center.as_tuple()}
-    if options:
-        for index in range(need):
-            weights = options[(offset + index) % len(options)]
-            key = weights.as_tuple()
-            if key in seen:
-                continue
-            seen.add(key)
-            field.append(weights)
+    if options and probe_slots > 0:
+        for index in range(probe_slots):
+            add(options[(offset + index) % len(options)])
     if len(field) < bot_count:
         for weights in _pair_probes(center, step, seen):
             field.append(weights)
             if len(field) >= bot_count:
                 break
-    return field[:bot_count], offset + need
+    return field[:bot_count], offset + probe_slots
+
+
+def _names_for(field: list[Weights], pinned: list[tuple[str, Weights]], rng: random.Random) -> list[str]:
+    """Keep a saved bot's name when its weights are still in the field."""
+    remaining = list(pinned)
+    used: set[str] = set()
+    names: list[str] = []
+    for weights in field:
+        match = next((index for index, (_, saved) in enumerate(remaining) if saved.as_tuple() == weights.as_tuple()), None)
+        if match is None:
+            name = generate_bot_name(used, rng)
+        else:
+            raw = remaining.pop(match)[0].strip() or "Saved bot"
+            name = raw
+            suffix = 2
+            while name in used:
+                name = f"{raw} {suffix}"
+                suffix += 1
+        used.add(name)
+        names.append(name)
+    return names
 
 
 def _search_config(bot_count: int, depth: int) -> TournamentConfig:
@@ -132,6 +180,22 @@ def _search_config(bot_count: int, depth: int) -> TournamentConfig:
         range_d=unused,
         range_e=unused,
         range_exp=fixed,
+    )
+
+
+def _start_field(
+    field: list[Weights],
+    pinned: list[tuple[str, Weights]],
+    *,
+    bot_count: int,
+    depth: int,
+    rng: random.Random,
+):
+    return manager.start_with_weights(
+        _search_config(bot_count, depth),
+        field,
+        rng,
+        names=_names_for(field, pinned, rng),
     )
 
 
@@ -163,15 +227,26 @@ async def _champion_weights(tournament_id: str) -> tuple[Weights, str]:
     return winner.weights, winner.name
 
 
-async def _run_campaign(job_id: str, *, bot_count: int, depth: int) -> None:
+async def _run_campaign(
+    job_id: str,
+    *,
+    bot_count: int,
+    depth: int,
+    pinned: list[tuple[str, Weights]],
+    rng: random.Random,
+) -> None:
     global _running
+    pinned_weights = [weights for _, weights in pinned]
     try:
         center, name = await _champion_weights(_jobs[job_id]["tournament_id"])
         _update(job_id, leader=name)
         offset = 0
         for index, step in enumerate(FINE_STEPS):
-            field, offset = fine_field(center, step, bot_count, offset)
-            tournament = manager.start_with_weights(_search_config(bot_count, depth), field)
+            field, offset = fine_field(center, step, bot_count, offset, pinned_weights)
+            held = list(pinned)
+            if not any(weights.as_tuple() == center.as_tuple() for _, weights in held):
+                held.append((name, center))
+            tournament = _start_field(field, held, bot_count=bot_count, depth=depth, rng=rng)
             _update(
                 job_id,
                 generation=index + 2,
@@ -191,9 +266,15 @@ async def _run_campaign(job_id: str, *, bot_count: int, depth: int) -> None:
             _running = False
 
 
-def start_refine(*, bot_count: int = 4, depth: int = 3) -> dict[str, Any]:
+def start_refine(
+    *,
+    bot_count: int = 4,
+    depth: int = 3,
+    pinned: list[tuple[str, Weights]] | None = None,
+) -> dict[str, Any]:
     """Start the coarse tournament, then keep going on the running event loop."""
     global _running, _seq
+    pinned = list(pinned or [])
     with _lock:
         if _running:
             raise RuntimeError("a weight search is already running")
@@ -201,10 +282,10 @@ def start_refine(*, bot_count: int = 4, depth: int = 3) -> dict[str, Any]:
         _seq += 1
         job_id = new_id("refine")
 
+    rng = random.Random()
     try:
-        rng = random.Random()
-        field = coarse_field(bot_count, rng)
-        tournament = manager.start_with_weights(_search_config(bot_count, depth), field, rng)
+        field = coarse_field(bot_count, rng, [weights for _, weights in pinned])
+        tournament = _start_field(field, pinned, bot_count=bot_count, depth=depth, rng=rng)
     except Exception:
         with _lock:
             _running = False
@@ -228,7 +309,9 @@ def start_refine(*, bot_count: int = 4, depth: int = 3) -> dict[str, Any]:
             "saved_id": None,
             "error": None,
         }
-    asyncio.get_running_loop().create_task(_run_campaign(job_id, bot_count=bot_count, depth=depth))
+    asyncio.get_running_loop().create_task(
+        _run_campaign(job_id, bot_count=bot_count, depth=depth, pinned=pinned, rng=rng)
+    )
     return _snapshot(job_id)
 
 

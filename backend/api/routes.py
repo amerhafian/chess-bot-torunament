@@ -20,6 +20,21 @@ from backend.weights import store as weight_store
 router = APIRouter()
 
 
+def _load_pinned(weight_ids: list[str]) -> list[tuple[str, Weights]]:
+    pinned: list[tuple[str, Weights]] = []
+    seen: set[str] = set()
+    for weight_id in weight_ids:
+        if not weight_id or weight_id in seen:
+            continue
+        seen.add(weight_id)
+        saved = weight_store.get_weights(weight_id)
+        if saved is None:
+            raise HTTPException(status_code=404, detail=f"Saved weights not found: {weight_id}")
+        label = str(saved.get("bot_name") or saved.get("name") or weight_id)
+        pinned.append((label, Weights.from_dict(saved)))
+    return pinned
+
+
 class WeightRangeIn(BaseModel):
     min: float
     max: float
@@ -146,17 +161,7 @@ async def evaluate_position(body: EvaluateIn) -> dict[str, Any]:
 
 @router.post("/tournaments")
 async def create_tournament(body: TournamentCreateIn) -> dict[str, Any]:
-    pinned: list[tuple[str, Weights]] = []
-    seen: set[str] = set()
-    for weight_id in body.weight_ids:
-        if not weight_id or weight_id in seen:
-            continue
-        seen.add(weight_id)
-        saved = weight_store.get_weights(weight_id)
-        if saved is None:
-            raise HTTPException(status_code=404, detail=f"Saved weights not found: {weight_id}")
-        label = str(saved.get("bot_name") or saved.get("name") or weight_id)
-        pinned.append((label, Weights.from_dict(saved)))
+    pinned = _load_pinned(body.weight_ids)
     try:
         config = parse_config(body.model_dump())
         tournament = await manager.create_tournament(config, pinned)
@@ -230,12 +235,16 @@ async def save_weights(body: SaveWeightsIn) -> dict[str, Any]:
 class RefineIn(BaseModel):
     bot_count: int = Field(default=4, ge=2, le=32)
     depth: int = Field(default=3, ge=1)
+    weight_ids: list[str] = Field(default_factory=list)
 
 
 @router.post("/weights/refine")
 async def start_weight_refine(body: RefineIn) -> dict[str, Any]:
+    pinned = _load_pinned(body.weight_ids)
     try:
-        return weight_refine.start_refine(bot_count=body.bot_count, depth=body.depth)
+        return weight_refine.start_refine(bot_count=body.bot_count, depth=body.depth, pinned=pinned)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

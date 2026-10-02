@@ -77,7 +77,7 @@ export function TournamentSetupPage() {
     setRefineError(null)
     setFinding(true)
     try {
-      const job = await api.startRefine(botCount, depth)
+      const job = await api.startRefine(botCount, depth, selectedIds)
       if (job.tournament_id) navigate(`/tournament/${job.tournament_id}`)
     } catch (err) {
       setRefineError(err instanceof Error ? err.message : 'Could not start weight search')
@@ -93,6 +93,7 @@ export function TournamentSetupPage() {
   const refineGames = 5 * botCount * (botCount - 1)
   const randomSeats = Math.max(0, botCount - selectedIds.length)
   const tooManySaved = selectedIds.length > botCount
+  const noSearchSeat = selectedIds.length >= botCount
 
   const start = async () => {
     setLoading(true)
@@ -178,7 +179,7 @@ export function TournamentSetupPage() {
             </span>
           </div>
           <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
-            Checked presets take a seat and keep their name. The other seats are drawn from the ranges below.
+            Checked presets take a seat and keep their name. Begin tournament fills the other seats from the ranges. Find weights keeps the checked bots in every round.
           </p>
           {saved.length === 0 ? (
             <p className="mt-3 text-sm text-[var(--color-ink-soft)]">
@@ -224,18 +225,21 @@ export function TournamentSetupPage() {
             <div>
               <h2 className="font-display text-xl font-semibold text-[var(--color-felt-deep)]">Find weights</h2>
               <p className="mt-1 text-sm text-[var(--color-ink-soft)]">
-                Uses the bot count and depth above, and ignores the ranges. Five round-robins: a coarse field, then smaller steps around the champion. Material stays at 1. About {refineGames} full games.
+                Uses the bot count and depth above, and ignores the ranges. Checked saved bots stay in every round; the other seats try coarse weights, then smaller steps around the champion. Material stays at 1. About {refineGames} full games.
               </p>
             </div>
             <button
               type="button"
-              disabled={finding}
+              disabled={finding || noSearchSeat}
               onClick={findWeights}
               className="rounded-md border border-[rgba(92,58,26,0.35)] bg-white/70 px-4 py-2 text-sm font-semibold disabled:opacity-60"
             >
               {finding ? 'Starting…' : 'Find weights'}
             </button>
           </div>
+          {noSearchSeat && (
+            <p className="mt-2 text-sm text-rose-700">Leave at least one seat open so the search can try new weights.</p>
+          )}
           {refineError && <p className="mt-2 text-sm text-rose-700">{refineError}</p>}
         </div>
 

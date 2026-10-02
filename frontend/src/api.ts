@@ -216,11 +216,11 @@ export const api = {
   deleteWeights: (id: string) =>
     fetch(`/api/weights/${id}`, { method: 'DELETE' }).then((r) => json<{ deleted: boolean }>(r)),
 
-  startRefine: (botCount: number, depth: number) =>
+  startRefine: (botCount: number, depth: number, weightIds: string[] = []) =>
     fetch('/api/weights/refine', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bot_count: botCount, depth }),
+      body: JSON.stringify({ bot_count: botCount, depth, weight_ids: weightIds }),
     }).then((r) => json<RefineJob>(r)),
 
   refineStatus: () => fetch('/api/weights/refine').then((r) => json<RefineJob>(r)),

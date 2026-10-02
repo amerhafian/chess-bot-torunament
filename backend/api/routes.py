@@ -24,7 +24,7 @@ class WeightRangeIn(BaseModel):
 class TournamentCreateIn(BaseModel):
     bot_count: int = Field(default=4, ge=2, le=32)
     format: TournamentFormat = TournamentFormat.ROUND_ROBIN
-    depth: int = Field(default=5, ge=1, le=6)
+    depth: int = Field(default=3, ge=1, le=8)
     range_a: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.5, max=2.0))
     range_b: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
     range_c: WeightRangeIn = Field(default_factory=lambda: WeightRangeIn(min=0.0, max=1.0))
@@ -45,7 +45,7 @@ class SaveWinnerIn(BaseModel):
 
 
 class PlayCreateIn(BaseModel):
-    depth: int = Field(default=5, ge=1, le=6)
+    depth: int = Field(default=3, ge=1, le=8)
     human_color: str = Field(default="white", pattern="^(white|black)$")
     weight_id: Optional[str] = None
     a: Optional[float] = None

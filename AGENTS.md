@@ -10,14 +10,22 @@
 A browser-based platform where alpha-beta chess bots compete in tournaments. Bots share the same search algorithm; they differ only by evaluation **weights** `(a, b, c)` over three metrics:
 
 ```
-score = a * material + b * controlled_squares + c * checking_moves
+score = a * material + b * controlled_squares + c * king_pressure
 ```
 
 - **material**: P=1, N=3, B=3, R=5, Q=9 (King=0); White − Black
 - **controlled_squares**: sum of attacked squares per piece (overlaps count); White − Black
-- **checking_moves**: count of legal checking moves per side; White − Black
+- **king_pressure** (weight `c`): fast proxy for king safety / checking pressure — count attackers on the enemy king square **and** king-adjacent ring squares; White − Black. (Replaces the original “count all legal checking moves” leaf scan, which was too slow.)
 
 Positive scores favor White. Mate uses ±100000 adjusted by depth.
+
+### Search performance
+
+- Default search **depth is 3** (API/UI range 1–8). Depth 5+ is still possible but expensive in pure Python.
+- **Do not** parallelize a single `evaluate()` call — too fine-grained; overhead dominates.
+- Alpha-beta uses a **per-search transposition table**.
+- At depth ≥ 3 with enough root moves, **root-move parallelism** via `ProcessPoolExecutor` (`spawn`) uses multiple CPU cores. Each worker has a private TT.
+- Tournament game concurrency is tuned via `game_concurrency()` so games and root workers do not oversubscribe cores.
 
 ## Stack
 
@@ -62,11 +70,11 @@ PYTHONPATH=. pytest -q
 
 ## Product rules agents must keep
 
-1. Default search **depth is 5** (configurable 1–6 in UI/API).
+1. Default search **depth is 3** (configurable 1–8 in UI/API).
 2. Tournament formats: **both** round-robin (two games per pair, colors swapped) and single elimination (byes if needed; draws → rematch swapped colors → random if still drawn).
 3. Unwatched games run **as fast as possible**. Watched games (WebSocket subscribers on `/ws/games/{id}`) pace at **≥1 second per move**. Multiple games can be watched at once.
 4. No chess clocks / time controls unless explicitly requested.
-5. Keep the three evaluation metrics and linear weight formula as specified — do not replace with NNUE/Stockfish/etc.
+5. Keep the three-metric linear weight formula (`a·x + b·y + c·z`). Metric `z` is king-pressure (see above), not a full checking-move generator. Do not replace with NNUE/Stockfish/etc.
 6. Move ordering may use cheap heuristics (captures/checks first); that does not change which move alpha-beta selects at a given depth.
 
 ## API sketch

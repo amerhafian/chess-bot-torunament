@@ -12,7 +12,7 @@ export function PlayPage() {
   const [mode, setMode] = useState<'import' | 'random'>('random')
   const [weightId, setWeightId] = useState(params.get('weight') || '')
   const [humanColor, setHumanColor] = useState<'white' | 'black'>('white')
-  const [depth, setDepth] = useState(5)
+  const [depth, setDepth] = useState(3)
   const [rangeA, setRangeA] = useState({ min: 0.5, max: 2 })
   const [rangeB, setRangeB] = useState({ min: 0, max: 1 })
   const [rangeC, setRangeC] = useState({ min: 0, max: 1 })
@@ -244,7 +244,7 @@ export function PlayPage() {
             <input
               type="number"
               min={1}
-              max={6}
+              max={8}
               className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
               value={depth}
               onChange={(e) => setDepth(Number(e.target.value))}

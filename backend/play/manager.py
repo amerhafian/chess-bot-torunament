@@ -86,7 +86,7 @@ class PlayManager:
         self,
         *,
         weights: Weights,
-        depth: int = 5,
+        depth: int = 3,
         human_color: str = "white",
         bot_name: Optional[str] = None,
     ) -> PlaySession:

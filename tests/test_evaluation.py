@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import time
+
 import chess
 
-from backend.engine.bot import Bot
+from backend.engine.bot import DEFAULT_DEPTH, Bot
 from backend.engine.evaluation import (
     PIECE_VALUES,
     Weights,
@@ -37,22 +39,18 @@ def test_piece_values():
 
 
 def test_controlled_squares_overlap_counts():
-    # Two white rooks on open file both attack e4-like squares; use simple position.
     board = chess.Board(None)
     board.set_piece_at(chess.A1, chess.Piece.from_symbol("R"))
     board.set_piece_at(chess.A2, chess.Piece.from_symbol("R"))
     board.set_piece_at(chess.E8, chess.Piece.from_symbol("k"))
     board.set_piece_at(chess.E1, chess.Piece.from_symbol("K"))
-    # Attacked squares include overlap on the a-file between them.
     white_only = controlled_squares_balance(board)
     assert white_only > 0
-    # Removing second rook should reduce control count.
     board.remove_piece_at(chess.A2)
     assert controlled_squares_balance(board) < white_only
 
 
-def test_checking_moves_scholars_mate_threat():
-    # After 1.e4 e5 2.Qh5 Nc6 3.Bc4 — White has Qxf7# available among checks.
+def test_king_pressure_scholars_mate_threat():
     board = chess.Board()
     board.push_san("e4")
     board.push_san("e5")
@@ -60,7 +58,7 @@ def test_checking_moves_scholars_mate_threat():
     board.push_san("Nc6")
     board.push_san("Bc4")
     board.push_san("Nf6")
-    # White to move with Qxf7#
+    # White queen/bishop pressure the black king ring / f7
     assert checking_moves_balance(board) > 0
 
 
@@ -87,6 +85,7 @@ def test_bot_finds_mate_in_one():
         name="Tester",
         weights=Weights(material=1.0, controlled=0.1, checking=0.1),
         depth=2,
+        use_parallel=False,
     )
     move = bot.choose_move(board)
     assert move is not None
@@ -94,6 +93,35 @@ def test_bot_finds_mate_in_one():
     assert board.is_checkmate()
 
 
-def test_default_depth_is_five():
+def test_default_depth_is_three():
     bot = Bot(name="Deep", weights=Weights(1, 1, 1))
-    assert bot.depth == 5
+    assert bot.depth == DEFAULT_DEPTH == 3
+
+
+def test_parallel_choose_move_returns_legal():
+    board = chess.Board()
+    bot = Bot(
+        name="Parallel",
+        weights=Weights(1.0, 0.2, 0.2),
+        depth=3,
+        use_parallel=True,
+    )
+    move = bot.choose_move(board)
+    assert move is not None
+    assert move in board.legal_moves
+
+
+def test_depth3_opening_move_is_fast():
+    board = chess.Board()
+    bot = Bot(
+        name="Bench",
+        weights=Weights(1.0, 0.2, 0.2),
+        depth=3,
+        use_parallel=True,
+    )
+    t0 = time.perf_counter()
+    move = bot.choose_move(board)
+    elapsed = time.perf_counter() - t0
+    assert move is not None
+    # After optimizations, depth-3 opening should be well under a few seconds.
+    assert elapsed < 5.0, f"depth-3 move too slow: {elapsed:.2f}s"

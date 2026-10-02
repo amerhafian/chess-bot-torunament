@@ -177,8 +177,10 @@ class TournamentManager:
 
     async def _run_round_robin(self, tournament: TournamentState) -> None:
         pending = [g for g in tournament.games.values() if g.status == GameStatus.PENDING]
-        # Limit concurrency so depth-5 games don't explode CPU
-        sem = asyncio.Semaphore(4)
+        from backend.engine.bot import game_concurrency
+
+        # Leave headroom for per-move root process pools
+        sem = asyncio.Semaphore(game_concurrency())
 
         async def run_one(game: GameState) -> None:
             async with sem:
@@ -225,7 +227,9 @@ class TournamentManager:
                     await asyncio.sleep(0.05)
                     continue
 
-            sem = asyncio.Semaphore(4)
+            from backend.engine.bot import game_concurrency
+
+            sem = asyncio.Semaphore(game_concurrency())
 
             async def run_match_game(game: GameState) -> None:
                 async with sem:
@@ -404,9 +408,9 @@ def parse_config(data: dict[str, Any]) -> TournamentConfig:
         raise ValueError("bot_count must be at least 2")
     if bot_count > 32:
         raise ValueError("bot_count must be at most 32")
-    depth = int(data.get("depth", 5))
-    if depth < 1 or depth > 6:
-        raise ValueError("depth must be between 1 and 6")
+    depth = int(data.get("depth", 3))
+    if depth < 1 or depth > 8:
+        raise ValueError("depth must be between 1 and 8")
 
     range_a = rng("range_a", 0.5, 2.0)
     range_b = rng("range_b", 0.0, 1.0)

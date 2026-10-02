@@ -51,7 +51,7 @@ export function TournamentSetupPage() {
   const navigate = useNavigate()
   const [botCount, setBotCount] = useState(4)
   const [format, setFormat] = useState<'round_robin' | 'single_elimination'>('round_robin')
-  const [depth, setDepth] = useState(5)
+  const [depth, setDepth] = useState(3)
   const [rangeA, setRangeA] = useState<Range>({ min: 0.5, max: 2.0 })
   const [rangeB, setRangeB] = useState<Range>({ min: 0.0, max: 1.0 })
   const [rangeC, setRangeC] = useState<Range>({ min: 0.0, max: 1.0 })
@@ -108,7 +108,7 @@ export function TournamentSetupPage() {
             <input
               type="number"
               min={1}
-              max={6}
+              max={8}
               className="w-full rounded-md border border-[rgba(92,58,26,0.25)] bg-white/70 px-3 py-2"
               value={depth}
               onChange={(e) => setDepth(Number(e.target.value))}

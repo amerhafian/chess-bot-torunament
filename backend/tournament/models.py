@@ -52,7 +52,7 @@ class BotSpec:
     id: str
     name: str
     weights: Weights
-    depth: int = 5
+    depth: int = 3
 
     def to_dict(self) -> dict[str, Any]:
         return {

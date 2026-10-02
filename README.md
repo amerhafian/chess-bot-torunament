@@ -5,8 +5,8 @@ Breed alpha-beta chess bots with random evaluation weights, run tournaments, wat
 ## Features
 
 - **python-chess** for rules, legal moves, and attacks
-- Alpha-beta search (default depth **5**) with weighted evaluation:
-  - material · controlled squares · checking moves  
+- Alpha-beta search (default depth **3**, TT + root-parallel on multi-core) with weighted evaluation:
+  - material · controlled squares · king pressure  
   - `score = a·x + b·y + c·z`
 - Tournaments: **round-robin** or **single elimination**
 - Live multi-game watching (≥1s/move when watched; unwatched games run fast)

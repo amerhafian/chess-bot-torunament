@@ -27,8 +27,9 @@ Positive scores favor White. Mate uses ±100000 adjusted by depth.
 - At depth ≥ 3 with enough root moves, **root-move parallelism** via `ProcessPoolExecutor` (`spawn`) uses multiple CPU cores. Each worker has a private TT.
 - **Search lanes (isolation):** human vs bot uses `lane="interactive"` (inline search inside `asyncio.to_thread`). Tournaments use `lane="background"` with a separate process pool. They must not share a pool queue — otherwise tournaments starve live play.
 - Tournament games run concurrently via `game_concurrency()` (at least 4).
-- **Eval bar:** shows the **search score** of the last bot think (`choose_move` → `(move, score)`), Stockfish-style — not the static leaf eval of the current FEN. `eval_history` stores per-ply scores for scrubbing; human plies may be `null` until the bot replies. Static eval is only a fallback before any search exists.
-- In-search terminals skip expensive threefold scans; move ordering prefers captures only (no `gives_check` sort).
+- **Eval bar:** shows the **search score** of the last bot think (`choose_move` → `(move, score)`), Stockfish-style — not the static leaf eval of the current FEN. `eval_history` stores per-ply scores for scrubbing; human plies may be `null` until the bot replies. Static eval is only a fallback before any search exists. Live bar EMA-smooths `white_pct`; scrubbing is exact.
+- **Metric scales (pawn-ish):** `score = a*material + b*(controlled/20) + c*(king_pressure/4)`. Bar uses `tanh(score/3)`.
+- In-search terminals: mate/stalemate/insufficient/50-move, plus **threefold** via `is_repetition(2)` when `halfmove_clock >= 4`. Game loop still uses full `claim_draw=True`. Move ordering prefers captures only (no `gives_check` sort).
 
 ## Stack
 

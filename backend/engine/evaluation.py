@@ -27,6 +27,12 @@ PIECE_VALUES: dict[chess.PieceType, int] = {
 
 MATE_SCORE = 100_000
 
+# Pawn-comparable metric scales: raw_metric / SCALE ≈ roughly one pawn of influence.
+CONTROLLED_SCALE = 20.0
+KING_SCALE = 4.0
+# Eval-bar tanh saturates near ±BAR_SCALE pawns.
+BAR_SCALE = 3.0
+
 _PIECE_TYPES_SCORED = (chess.PAWN, chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN)
 
 
@@ -138,18 +144,22 @@ def evaluate(board: chess.Board, weights: Weights, depth_remaining: int = 0) -> 
     if board.halfmove_clock >= 100:
         return 0.0
 
+    # Match search terminals: threefold (is_repetition(2) == third occurrence).
+    if board.halfmove_clock >= 4 and board.is_repetition(2):
+        return 0.0
+
     score = 0.0
     if weights.material != 0.0:
         score += weights.material * material_balance(board)
     if weights.controlled != 0.0:
-        score += weights.controlled * controlled_squares_balance(board)
+        score += weights.controlled * (controlled_squares_balance(board) / CONTROLLED_SCALE)
     if weights.checking != 0.0:
-        score += weights.checking * checking_moves_balance(board)
+        score += weights.checking * (checking_moves_balance(board) / KING_SCALE)
     return score
 
 
-def score_to_bar(score: float, *, scale: float = 8.0) -> dict[str, Any]:
-    """Convert a White-perspective score into eval-bar fields."""
+def score_to_bar(score: float, *, scale: float = BAR_SCALE) -> dict[str, Any]:
+    """Convert a White-perspective pawn-ish score into eval-bar fields."""
     if score >= MATE_SCORE / 2:
         white_pct = 100.0
         label = "M"
@@ -168,7 +178,7 @@ def score_to_bar(score: float, *, scale: float = 8.0) -> dict[str, Any]:
     }
 
 
-def display_eval(board: chess.Board, weights: Weights, *, scale: float = 8.0) -> dict[str, Any]:
+def display_eval(board: chess.Board, weights: Weights, *, scale: float = BAR_SCALE) -> dict[str, Any]:
     """Static eval for UI bars when no search score is available yet."""
     data = score_to_bar(evaluate(board, weights), scale=scale)
     data["source"] = "static"
@@ -180,7 +190,7 @@ def display_eval_averaged(
     weights_a: Weights,
     weights_b: Weights,
     *,
-    scale: float = 8.0,
+    scale: float = BAR_SCALE,
 ) -> dict[str, Any]:
     """Average of two static weight sets (fallback only)."""
     score = 0.5 * (evaluate(board, weights_a) + evaluate(board, weights_b))

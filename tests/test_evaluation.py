@@ -62,15 +62,26 @@ def test_king_pressure_scholars_mate_threat():
     assert checking_moves_balance(board) > 0
 
 
-def test_evaluate_weighted_sum():
+def test_evaluate_weighted_sum_uses_metric_scales():
+    from backend.engine.evaluation import CONTROLLED_SCALE, KING_SCALE
+
     board = chess.Board()
-    weights = Weights(material=1.0, controlled=0.0, checking=0.0)
+    weights = Weights(material=1.0, controlled=1.0, checking=1.0)
     metrics = compute_metrics(board)
-    assert evaluate(board, weights) == (
+    expected = (
         weights.material * metrics.material
-        + weights.controlled * metrics.controlled
-        + weights.checking * metrics.checking
+        + weights.controlled * (metrics.controlled / CONTROLLED_SCALE)
+        + weights.checking * (metrics.checking / KING_SCALE)
     )
+    assert evaluate(board, weights) == expected
+
+
+def test_one_pawn_up_is_about_one_on_bar():
+    board = chess.Board()
+    board.remove_piece_at(chess.A7)
+    data = score_to_bar(evaluate(board, Weights(1.0, 0.0, 0.0)))
+    assert abs(data["score"] - 1.0) < 1e-9
+    assert data["white_pct"] > 50
 
 
 def test_bot_finds_mate_in_one():

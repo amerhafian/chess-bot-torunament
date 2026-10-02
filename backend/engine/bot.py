@@ -251,10 +251,16 @@ def _order_moves(board: chess.Board, moves: list[chess.Move]) -> list[chess.Move
 
 
 def _is_cheap_terminal(board: chess.Board) -> bool:
-    """Fast terminal detection for search — skips expensive threefold scans."""
+    """Fast terminal detection for search.
+
+    Includes a gated threefold check (cheap enough when halfmove_clock >= 4)
+    so the tree treats repetitions as draws. Full claim_draw stays in the game loop.
+    """
     if board.is_insufficient_material():
         return True
     if board.halfmove_clock >= 100:
+        return True
+    if board.halfmove_clock >= 4 and board.is_repetition(2):
         return True
     # Checkmate / stalemate: no legal moves
     try:

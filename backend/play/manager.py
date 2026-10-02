@@ -147,7 +147,12 @@ class PlayManager:
     async def _bot_move(self, session: PlaySession, board: chess.Board) -> None:
         session.bot_thinking = True
         self._publish(session)
-        bot = Bot(session.bot_name, session.weights, session.depth)
+        bot = Bot(
+            session.bot_name,
+            session.weights,
+            session.depth,
+            lane="interactive",
+        )
         t0 = time.perf_counter()
         move = await asyncio.to_thread(bot.choose_move, board)
         elapsed = time.perf_counter() - t0

@@ -269,8 +269,18 @@ class TournamentManager:
 
     async def _play_game(self, game: GameState) -> None:
         board = chess.Board()
-        white_bot = Bot(game.white.name, game.white.weights, game.white.depth)
-        black_bot = Bot(game.black.name, game.black.weights, game.black.depth)
+        white_bot = Bot(
+            game.white.name,
+            game.white.weights,
+            game.white.depth,
+            lane="background",
+        )
+        black_bot = Bot(
+            game.black.name,
+            game.black.weights,
+            game.black.depth,
+            lane="background",
+        )
 
         game.status = GameStatus.RUNNING
         game.started_at = time.time()

@@ -1,5 +1,10 @@
 # Chess Bot Tournament — agent notes
 
+## Agent workflow preferences (owner)
+
+- **Do not** run browser-based manual tests, `computerUse` subagents, screen recordings, or screenshot walkthrough artifacts unless the owner **explicitly** asks for them. They are token-heavy.
+- Prefer **pytest**, curl/API smoke checks, and `npm run build` for verification.
+
 ## What this project is
 
 A browser-based platform where alpha-beta chess bots compete in tournaments. Bots share the same search algorithm; they differ only by evaluation **weights** `(a, b, c)` over three metrics:

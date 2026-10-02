@@ -776,7 +776,7 @@ def evaluate(board: chess.Board, weights: Weights, ply_from_root: int = 0) -> fl
     if board.halfmove_clock >= 100:
         return 0.0
 
-    if board.halfmove_clock >= 4 and board.is_repetition(2):
+    if board.halfmove_clock >= 4 and board.is_repetition(3):
         return 0.0
 
     return static_eval(board, weights)

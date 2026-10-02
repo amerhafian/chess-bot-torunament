@@ -857,9 +857,11 @@ PYBIND11_MODULE(native, m) {
     });
     m.def(
         "choose_move",
-        [](const std::string& fen, const std::vector<double>& weights, int depth, int threads) {
+        [](const std::string& fen, const std::vector<double>& weights, int depth, int threads,
+           const std::vector<std::string>& history) {
             if (depth < 1) depth = 1;
             chess::Board board(fen);
+            for (const auto& played : history) board.makeMove(chess::uci::uciToMove(board, played));
             chess::Movelist moves;
             chess::movegen::legalmoves(moves, board);
             if (moves.empty()) throw std::runtime_error("no legal moves");
@@ -876,5 +878,6 @@ PYBIND11_MODULE(native, m) {
         py::arg("fen"),
         py::arg("weights"),
         py::arg("depth"),
-        py::arg("threads") = 0);
+        py::arg("threads") = 0,
+        py::arg("history") = std::vector<std::string>{});
 }

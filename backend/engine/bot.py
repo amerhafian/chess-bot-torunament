@@ -153,12 +153,28 @@ class Bot:
             return _iterative_search(board, ordered, self.weights, self.depth, False, self.lane)
 
 
+def _reversible_history(board: chess.Board) -> tuple[str, list[str]]:
+    """FEN at the last irreversible move, and the UCI moves back to ``board``.
+
+    A FEN has no repetition stack. Replays cannot cross a capture or pawn move,
+    which is exactly the halfmove window.
+    """
+    scratch = board.copy(stack=True)
+    moves: list[str] = []
+    steps = min(board.halfmove_clock, len(scratch.move_stack))
+    for _ in range(steps):
+        moves.append(scratch.pop().uci())
+    moves.reverse()
+    return scratch.fen(), moves
+
+
 def _native_choose(board: chess.Board, weights: Weights, depth: int, threads: int) -> Optional[MoveResult]:
     mod = _native_module()
     if mod is None:
         return None
     try:
-        uci, score = mod.choose_move(board.fen(), list(weights.as_tuple()), int(depth), int(threads))
+        fen, history = _reversible_history(board)
+        uci, score = mod.choose_move(fen, list(weights.as_tuple()), int(depth), int(threads), history)
         move = chess.Move.from_uci(uci)
     except Exception:
         return None
@@ -265,8 +281,9 @@ def _search_root(
     if use_pool and rest and alpha < beta:
         try:
             pool = _get_pool(lane)
+            ancestor, history = _reversible_history(board)
             payloads = [
-                (board.fen(), move.uci(), depth - 1, ctx.weights.as_tuple(), alpha, beta)
+                (ancestor, history, move.uci(), depth - 1, ctx.weights.as_tuple(), alpha, beta)
                 for move in rest
             ]
             for move_uci, score in pool.map(_score_root_move, payloads, chunksize=1):
@@ -289,8 +306,10 @@ def _search_root(
 
 def _score_root_move(payload: tuple) -> tuple[str, float]:
     """Worker entry: score one root move inside a fixed window."""
-    fen, move_uci, depth, weight_tuple, alpha, beta = payload
+    fen, history, move_uci, depth, weight_tuple, alpha, beta = payload
     board = chess.Board(fen)
+    for uci in history:
+        board.push_uci(uci)
     board.push(chess.Move.from_uci(move_uci))
     weights = Weights.from_tuple(weight_tuple)
     ctx = _Search(weights)
@@ -303,7 +322,7 @@ def _is_draw(board: chess.Board) -> bool:
         return True
     if board.halfmove_clock >= 100:
         return True
-    if board.halfmove_clock >= 4 and board.is_repetition(2):
+    if board.halfmove_clock >= 4 and board.is_repetition(3):
         return True
     return False
 
